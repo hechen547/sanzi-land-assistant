@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>三资照片工具 · UI布局提案</title>
+  <!--
+    设计假设：
+    1. 高频任务是“选照片 → 看效果 → 设置水印/命名 → 输出”，必须在同一页闭环。
+    2. 图斑整理是另一条工作流，保持独立。
+    3. 这是布局确认稿，图片区使用诚实的示意占位，不代表最终视觉素材。
+  -->
+  <style>
+    *{box-sizing:border-box}
+    :root{
+      --bg:#eef2f6;--surface:#fff;--surface-2:#f7f9fb;--line:#dbe2ea;
+      --ink:#17202b;--muted:#687587;--blue:#1769e0;--blue-2:#eaf2ff;
+      --green:#168a62;--amber:#ae6900;--shadow:0 12px 30px rgba(25,39,58,.08);
+    }
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);
+      font-family:"Microsoft YaHei UI","Microsoft YaHei",sans-serif;color:var(--ink)}
+    button,input,select{font:inherit}
+    .app{height:100vh;display:grid;grid-template-rows:58px 1fr;background:var(--bg)}
+    .topbar{display:flex;align-items:center;gap:16px;padding:0 22px;background:#172334;color:#fff;
+      box-shadow:0 1px 0 rgba(255,255,255,.08);z-index:2}
+    .brand-mark{width:30px;height:30px;border-radius:8px;background:#2c7df0;display:grid;place-items:center;
+      font-weight:800;letter-spacing:-1px}
+    .brand{font-size:17px;font-weight:700}.version{font-size:11px;color:#9fb0c6;margin-left:4px}
+    .top-spacer{flex:1}.top-meta{font-size:12px;color:#b7c4d4}
+    .workspace{min-height:0;display:grid;grid-template-columns:190px 1fr}
+    .sidebar{background:#fff;border-right:1px solid var(--line);padding:22px 14px;display:flex;flex-direction:column}
+    .nav-label{font-size:11px;color:#8995a4;padding:0 12px 8px;letter-spacing:.12em}
+    .nav-item{height:46px;border:0;background:transparent;border-radius:9px;padding:0 13px;
+      display:flex;align-items:center;gap:11px;color:#4a5869;cursor:pointer;text-align:left}
+    .nav-item.active{background:var(--blue-2);color:var(--blue);font-weight:700}
+    .nav-icon{width:24px;height:24px;border:1px solid currentColor;border-radius:7px;display:grid;place-items:center;font-size:12px}
+    .sidebar-note{margin-top:auto;border-top:1px solid var(--line);padding:15px 10px 0;color:var(--muted);font-size:11px;line-height:1.7}
+    .page{display:none;min-width:0;min-height:0;padding:18px}.page.active{display:grid}
+    .photo-page{grid-template-rows:auto 1fr auto;gap:13px}
+    .page-head{display:flex;align-items:flex-end;gap:18px}
+    .page-head h1{font-size:23px;line-height:1;margin:0 0 7px}.page-head p{margin:0;color:var(--muted);font-size:12px}
+    .steps{margin-left:auto;display:flex;align-items:center;gap:7px;color:#8a96a5;font-size:11px}
+    .step{display:flex;align-items:center;gap:6px}.step-num{width:20px;height:20px;border-radius:50%;
+      background:#dde4ed;display:grid;place-items:center;font-size:10px;font-weight:700}
+    .step.on{color:var(--blue);font-weight:700}.step.on .step-num{color:#fff;background:var(--blue)}
+    .step-line{width:25px;height:1px;background:#cfd7e1}
+    .photo-grid{min-height:0;display:grid;grid-template-columns:310px minmax(430px,1fr) 356px;gap:12px}
+    .panel{background:var(--surface);border:1px solid var(--line);border-radius:11px;box-shadow:0 2px 8px rgba(25,39,58,.025);
+      min-width:0;min-height:0}
+    .panel-head{height:50px;padding:0 15px;display:flex;align-items:center;border-bottom:1px solid var(--line)}
+    .panel-title{font-size:14px;font-weight:700}.count{margin-left:8px;font-size:10px;color:var(--blue);
+      background:var(--blue-2);padding:3px 7px;border-radius:10px}.ghost{margin-left:auto;border:0;background:transparent;color:var(--blue);font-size:11px}
+    .source-panel{display:grid;grid-template-rows:auto auto 1fr auto}
+    .source-tools{padding:12px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+    .path-row{display:flex;gap:6px}.path{height:34px;min-width:0;flex:1;border:1px solid #cfd8e4;border-radius:7px;padding:0 9px;color:#697789;background:#fbfcfd;font-size:11px}
+    .btn{border:1px solid #cbd5e1;background:#fff;border-radius:7px;height:34px;padding:0 12px;color:#354357;cursor:pointer;font-weight:600;font-size:11px}
+    .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn.dark{background:#172334;border-color:#172334;color:#fff}
+    .filter-row{display:flex;gap:6px}.chip{padding:5px 8px;background:#f3f6f9;border-radius:6px;font-size:10px;color:#667487}
+    .chip.on{background:#e9f2ff;color:var(--blue)}
+    .photo-list{overflow:hidden;padding:5px 0}
+    .photo-row{height:52px;display:grid;grid-template-columns:32px 46px 1fr 18px;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #edf1f5}
+    .photo-row.selected{background:#edf5ff}.check{width:15px;height:15px;border:1px solid #b9c5d3;border-radius:4px}.check.on{background:var(--blue);border-color:var(--blue);position:relative}.check.on:after{content:"✓";position:absolute;color:white;font-size:10px;left:2px;top:-1px}
+    .thumb{width:44px;height:34px;border-radius:5px;background:linear-gradient(160deg,#8cb17c 0 45%,#c5a56b 46% 75%,#778a55 76%);border:1px solid #d8dee6}
+    .file-name{font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.file-meta{font-size:9px;color:#8894a3;margin-top:4px}
+    .gps-dot{width:7px;height:7px;border-radius:50%;background:#22a676}.list-foot{padding:10px 12px;color:#778496;font-size:10px;background:#fafbfd}
+    .preview-panel{display:grid;grid-template-rows:50px 1fr 64px}
+    .preview-switch{margin-left:auto;display:flex;background:#f0f3f7;border-radius:7px;padding:3px}
+    .preview-switch span{padding:5px 9px;font-size:10px;border-radius:5px;color:#738092}.preview-switch .on{background:white;color:#263449;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+    .canvas{margin:12px;background:#19212b;border-radius:8px;display:grid;place-items:center;overflow:hidden;position:relative}
+    .photo{height:88%;aspect-ratio:4/3;position:relative;background:
+      linear-gradient(175deg,transparent 0 58%,rgba(65,82,43,.35) 59%),
+      linear-gradient(165deg,#adc8de 0 42%,#aa985f 43% 74%,#6f8448 75%);
+      box-shadow:0 7px 24px rgba(0,0,0,.35)}
+    .photo:before{content:"";position:absolute;left:5%;right:4%;top:48%;height:5px;background:#e8d49a;transform:rotate(-7deg)}
+    .wm{position:absolute;left:25px;bottom:23px;color:#fff;font-size:13px;line-height:1.55;text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000}
+    .wm strong{font-size:17px}.canvas-label{position:absolute;top:12px;left:12px;color:#a9b5c4;font-size:10px;background:rgba(0,0,0,.25);padding:5px 8px;border-radius:5px}
+    .preview-foot{display:flex;align-items:center;padding:0 15px;border-top:1px solid var(--line);gap:12px}
+    .zoom{font-size:10px;color:var(--muted)}.range{height:3px;flex:1;background:#dbe2ea;position:relative}.range:after{content:"";position:absolute;width:35%;height:100%;background:var(--blue)}.range:before{content:"";position:absolute;left:35%;top:-4px;width:11px;height:11px;border-radius:50%;background:var(--blue)}
+    .settings-panel{display:grid;grid-template-rows:50px 1fr}
+    .settings-scroll{overflow:auto;padding:0 14px 14px}
+    .section{padding:13px 0;border-bottom:1px solid var(--line)}.section:last-child{border:0}
+    .section-title{display:flex;align-items:center;margin-bottom:10px;font-size:12px;font-weight:700}.section-num{width:19px;height:19px;border-radius:5px;background:#eef3f8;color:#55677b;display:grid;place-items:center;margin-right:7px;font-size:9px}
+    .toggle{margin-left:auto;width:28px;height:16px;border-radius:10px;background:var(--blue);position:relative}.toggle:after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;background:#fff;border-radius:50%}
+    .form-row{display:grid;grid-template-columns:76px 1fr;align-items:center;gap:8px;margin:7px 0;font-size:10px;color:#667487}
+    .field{height:30px;border:1px solid #cfd8e3;border-radius:6px;background:#fff;padding:0 8px;color:#334155;font-size:10px}
+    .checkline{display:flex;gap:12px;flex-wrap:wrap}.mini-check{color:#415166;font-size:10px}.mini-check:before{content:"✓";display:inline-grid;place-items:center;width:13px;height:13px;color:#fff;background:var(--blue);border-radius:3px;margin-right:4px}
+    .color-box{display:flex;gap:7px}.swatch{width:25px;height:25px;border:1px solid #cbd4df;border-radius:6px;background:#fff}.swatch.black{background:#17202b}
+    .naming-preview{margin-top:8px;background:#f4f7fa;border-radius:6px;padding:8px;font-size:9px;color:#627084}.naming-preview b{color:#27364a}
+    .bottom-action{background:#fff;border:1px solid var(--line);border-radius:11px;min-height:67px;display:flex;align-items:center;padding:10px 14px;box-shadow:var(--shadow)}
+    .output-summary{display:flex;gap:24px}.metric{font-size:10px;color:var(--muted)}.metric strong{display:block;color:var(--ink);font-size:14px;margin-top:3px}
+    .output-path{margin-left:30px;font-size:10px;color:var(--muted)}.output-path b{display:block;color:#354357;margin-top:4px}
+    .action-spacer{flex:1}.big-btn{height:42px;padding:0 24px;border-radius:8px;border:0;background:var(--blue);color:white;font-size:13px;font-weight:700;box-shadow:0 5px 14px rgba(23,105,224,.25)}
+    .land-page{grid-template-rows:auto 1fr;gap:13px}
+    .land-grid{display:grid;grid-template-columns:340px 1fr;gap:12px;min-height:0}
+    .setup-panel{padding-bottom:14px}.setup-body{padding:14px}.dropzone{height:92px;border:1px dashed #aebccd;border-radius:8px;background:#fafcfe;display:grid;place-items:center;text-align:center;color:#738195;font-size:10px;line-height:1.7}
+    .dropzone b{color:#344257;font-size:12px}.setup-block{margin-top:16px}.setup-caption{font-size:11px;font-weight:700;margin-bottom:8px}
+    .radio-line{display:flex;gap:8px}.radio{flex:1;border:1px solid #d2dbe5;padding:9px;border-radius:7px;font-size:10px}.radio.on{border-color:var(--blue);background:var(--blue-2);color:var(--blue)}
+    .full{width:100%;margin-top:12px}
+    .result-panel{display:grid;grid-template-rows:74px 1fr 66px}
+    .stats{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--line)}
+    .stat{padding:13px 16px;border-right:1px solid var(--line);color:var(--muted);font-size:10px}.stat:last-child{border:0}.stat strong{display:block;font-size:19px;color:var(--ink);margin-bottom:3px}.stat.good strong{color:var(--green)}.stat.warn strong{color:var(--amber)}
+    .match-table{overflow:hidden}.table-head,.table-row{display:grid;grid-template-columns:42px 1.2fr 1fr 90px 90px;align-items:center;padding:0 15px}
+    .table-head{height:38px;background:#f6f8fa;color:#738092;font-size:10px;border-bottom:1px solid var(--line)}.table-row{height:47px;font-size:10px;border-bottom:1px solid #edf1f5}.status{padding:4px 7px;border-radius:10px;background:#e8f7f1;color:#147856;width:max-content}.status.miss{background:#fff3df;color:#9a5b00}
+    .result-foot{display:flex;align-items:center;padding:0 15px;border-top:1px solid var(--line)}.result-note{font-size:10px;color:var(--muted);line-height:1.6}.result-note b{color:#344257}.result-foot .big-btn{margin-left:auto}
+    @media(max-width:1100px){.photo-grid{grid-template-columns:260px 1fr}.settings-panel{display:none}.workspace{grid-template-columns:160px}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand-mark">三</div><div class="brand">三资照片整理工具 <span class="version">布局提案</span></div>
+    <div class="top-spacer"></div><div class="top-meta">照片处理工作台 · 所有操作默认不覆盖原图</div>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="nav-label">工作区</div>
+      <button class="nav-item active" data-page="photo"><span class="nav-icon">图</span>照片处理</button>
+      <button class="nav-item" data-page="land"><span class="nav-icon">地</span>图斑整理</button>
+      <div class="sidebar-note">只保留两条主流程。<br>照片、水印、命名、输出不再分散到不同页面。</div>
+    </aside>
+
+    <main class="page photo-page active" id="photo">
+      <div class="page-head">
+        <div><h1>照片处理</h1><p>在一个工作台内完成照片选择、水印设计、批量命名与输出。</p></div>
+        <div class="steps"><span class="step on"><i class="step-num">1</i>选择照片</span><i class="step-line"></i><span class="step on"><i class="step-num">2</i>设置效果</span><i class="step-line"></i><span class="step on"><i class="step-num">3</i>确认输出</span></div>
+      </div>
+      <div class="photo-grid">
+        <section class="panel source-panel">
+          <div class="panel-head"><span class="panel-title">照片来源</span><span class="count">128 张</span><button class="ghost">清空</button></div>
+          <div class="source-tools">
+            <div class="path-row"><input class="path" value="D:\项目照片\夏季巡查"><button class="btn">选择目录</button></div>
+            <div class="filter-row"><span class="chip on">全部 128</span><span class="chip">有 GPS 121</span><span class="chip">无 GPS 7</span></div>
+          </div>
+          <div class="photo-list">
+            <div class="photo-row selected"><i class="check on"></i><i class="thumb"></i><div><div class="file-name">DSC_20260618_001.jpg</div><div class="file-meta">10:32:18 · GPS 正常</div></div><i class="gps-dot"></i></div>
+            <div class="photo-row"><i class="check on"></i><i class="thumb"></i><div><div class="file-name">DSC_20260618_002.jpg</div><div class="file-meta">10:33:46 · GPS 正常</div></div><i class="gps-dot"></i></div>
+            <div class="photo-row"><i class="check on"></i><i class="thumb"></i><div><div class="file-name">DSC_20260618_003.jpg</div><div class="file-meta">10:35:02 · GPS 正常</div></div><i class="gps-dot"></i></div>
+            <div class="photo-row"><i class="check on"></i><i class="thumb"></i><div><div class="file-name">DSC_20260618_004.jpg</div><div class="file-meta">10:37:11 · GPS 正常</div></div><i class="gps-dot"></i></div>
+            <div class="photo-row"><i class="check"></i><i class="thumb"></i><div><div class="file-name">微信图片_20260618.jpg</div><div class="file-meta">无拍摄时间 · 无 GPS</div></div><i class="gps-dot" style="background:#c7ced7"></i></div>
+          </div>
+          <div class="list-foot">已选择 127 张 · 按拍摄时间升序</div>
+        </section>
+
+        <section class="panel preview-panel">
+          <div class="panel-head"><span class="panel-title">效果预览</span><div class="preview-switch"><span>原图</span><span class="on">处理后</span></div></div>
+          <div class="canvas"><span class="canvas-label">DSC_20260618_001.jpg</span><div class="photo"><div class="wm"><strong>现场照片</strong><br>纬度：35.123456<br>经度：113.654321<br>时间：2026-06-18 10:32:18</div></div></div>
+          <div class="preview-foot"><span class="zoom">缩放 78%</span><i class="range"></i><button class="btn">适应窗口</button></div>
+        </section>
+
+        <section class="panel settings-panel">
+          <div class="panel-head"><span class="panel-title">处理设置</span><button class="ghost">恢复默认</button></div>
+          <div class="settings-scroll">
+            <div class="section">
+              <div class="section-title"><i class="section-num">1</i>左下角水印<i class="toggle"></i></div>
+              <div class="checkline"><span class="mini-check">标题</span><span class="mini-check">纬度</span><span class="mini-check">经度</span><span class="mini-check">时间</span></div>
+              <div class="form-row"><label>标题文字</label><input class="field" value="现场照片"></div>
+              <div class="form-row"><label>模板</label><select class="field"><option>默认现场模板</option></select></div>
+              <div class="form-row"><label>字号</label><input class="field" value="48 px"></div>
+              <div class="form-row"><label>颜色</label><div class="color-box"><i class="swatch"></i><i class="swatch black"></i><button class="btn">更多</button></div></div>
+            </div>
+            <div class="section">
+              <div class="section-title"><i class="section-num">2</i>批量命名<i class="toggle"></i></div>
+              <div class="form-row"><label>命名方式</label><select class="field"><option>前缀 + 流水号</option></select></div>
+              <div class="form-row"><label>前缀 / 起号</label><input class="field" value="A　/　001"></div>
+              <div class="form-row"><label>排序依据</label><select class="field"><option>按拍摄时间</option></select></div>
+              <div class="naming-preview">命名预览：<b>A001.jpg、A002.jpg、A003.jpg …</b></div>
+            </div>
+            <div class="section">
+              <div class="section-title"><i class="section-num">3</i>输出设置</div>
+              <div class="form-row"><label>保存目录</label><input class="field" value="D:\处理完成"></div>
+              <div class="checkline"><span class="mini-check">保留 EXIF</span><span class="mini-check">不覆盖原图</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="bottom-action">
+        <div class="output-summary"><div class="metric">待处理<strong>127 张</strong></div><div class="metric">预计输出<strong>1.84 GB</strong></div></div>
+        <div class="output-path">输出到<b>D:\处理完成\</b></div><div class="action-spacer"></div>
+        <button class="btn" style="margin-right:9px">仅保存设置</button><button class="big-btn">开始处理照片</button>
+      </div>
+    </main>
+
+    <main class="page land-page" id="land">
+      <div class="page-head">
+        <div><h1>根据图斑整理照片</h1><p>导入 KML，预分析 GPS 匹配结果，确认后按图斑建立文件夹。</p></div>
+        <div class="steps"><span class="step on"><i class="step-num">1</i>导入资料</span><i class="step-line"></i><span class="step on"><i class="step-num">2</i>预分析</span><i class="step-line"></i><span class="step"><i class="step-num">3</i>整理输出</span></div>
+      </div>
+      <div class="land-grid">
+        <section class="panel setup-panel">
+          <div class="panel-head"><span class="panel-title">整理条件</span></div>
+          <div class="setup-body">
+            <div class="setup-caption">1. KML 图斑文件</div>
+            <div class="dropzone"><div><b>拖入或选择一个 / 多个 KML</b><br>当前已选择：2026夏季图斑.kml</div></div>
+            <div class="setup-block"><div class="setup-caption">2. 照片来源</div><div class="path-row"><input class="path" value="使用照片处理页中的 128 张照片"><button class="btn">更换</button></div></div>
+            <div class="setup-block"><div class="setup-caption">3. 匹配规则</div><div class="form-row" style="grid-template-columns:100px 1fr"><label>最近匹配距离</label><input class="field" value="0 米（仅图斑内部）"></div></div>
+            <div class="setup-block"><div class="setup-caption">4. 文件操作</div><div class="radio-line"><div class="radio on">● 复制照片<br><small>保留源文件</small></div><div class="radio">○ 移动照片<br><small>改变源目录</small></div></div></div>
+            <div class="setup-block"><div class="setup-caption">5. 输出目录</div><div class="path-row"><input class="path" value="D:\按图斑整理"><button class="btn">选择</button></div></div>
+            <button class="btn dark full">重新预分析匹配结果</button>
+          </div>
+        </section>
+        <section class="panel result-panel">
+          <div class="stats">
+            <div class="stat"><strong>86</strong>图斑总数</div><div class="stat good"><strong>114</strong>成功匹配</div><div class="stat warn"><strong>7</strong>未匹配照片</div><div class="stat"><strong>7</strong>无 GPS 照片</div><div class="stat warn"><strong>12</strong>无照片图斑</div>
+          </div>
+          <div class="match-table">
+            <div class="table-head"><span>序号</span><span>照片文件</span><span>匹配图斑</span><span>距离</span><span>状态</span></div>
+            <div class="table-row"><span>001</span><span>DSC_20260618_001.jpg</span><span>410726203205069047</span><span>0.00 m</span><span class="status">直接命中</span></div>
+            <div class="table-row"><span>002</span><span>DSC_20260618_002.jpg</span><span>410726203205069047</span><span>0.00 m</span><span class="status">直接命中</span></div>
+            <div class="table-row"><span>003</span><span>DSC_20260618_003.jpg</span><span>410726203205069048</span><span>0.00 m</span><span class="status">直接命中</span></div>
+            <div class="table-row"><span>004</span><span>DSC_20260618_004.jpg</span><span>—</span><span>—</span><span class="status miss">未匹配</span></div>
+            <div class="table-row"><span>005</span><span>DSC_20260618_005.jpg</span><span>410726203205069051</span><span>0.00 m</span><span class="status">直接命中</span></div>
+          </div>
+          <div class="result-foot"><div class="result-note">整理后同时生成：<b>未匹配照片.kml、无照片图斑.kml、整理结果.csv</b><br>预分析不会复制或移动任何文件。</div><button class="big-btn">确认并开始整理</button></div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const initial = params.get("view") === "land" ? "land" : "photo";
+  function showPage(id){
+    document.querySelectorAll(".page").forEach(x=>x.classList.toggle("active",x.id===id));
+    document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.page===id));
+  }
+  document.querySelectorAll(".nav-item").forEach(btn=>btn.addEventListener("click",()=>showPage(btn.dataset.page)));
+  showPage(initial);
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+[project]
+name = "sanzi-photo-tool"
+version = "0.1.0"
+description = "三资照片水印、批量命名与KML图斑整理工具"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "pillow>=11.0",
+    "pyproj>=3.7",
+    "pyside6>=6.8",
+    "shapely>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+]
+
+[project.scripts]
+sanzi-photo-tool = "sanzi_photo_tool.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sanzi_photo_tool"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+

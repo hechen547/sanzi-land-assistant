@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>图斑巡查平台 - GPS点位地图</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<style>
+*{box-sizing:border-box}html,body,#map{margin:0;padding:0;width:100%;height:100%;font-family:"Microsoft YaHei",Arial,sans-serif;overflow:hidden}.topbar{position:absolute;top:0;left:0;right:0;height:46px;z-index:1000;background:linear-gradient(90deg,#102a43,#1677ff);box-shadow:0 4px 18px #0003;color:#fff;display:flex;align-items:center;padding:0 14px;gap:12px}.brand{font-weight:700;font-size:15px;white-space:nowrap}.menu{display:flex;height:100%;align-items:center;gap:4px}.menu-item{position:relative;height:46px;display:flex;align-items:center;padding:0 12px;cursor:pointer;border-radius:8px}.menu-item:hover{background:#ffffff22}.dropdown{position:absolute;top:44px;left:0;min-width:210px;background:#fff;color:#1f2937;border-radius:10px;box-shadow:0 10px 28px #0003;padding:8px;display:none}.menu-item:hover .dropdown{display:block}.drop-title{font-size:12px;color:#667085;padding:8px 10px 4px}.drop-btn{width:100%;border:0;background:#fff;text-align:left;padding:9px 10px;border-radius:7px;cursor:pointer;color:#1f2937}.drop-btn:hover{background:#e6f4ff}.search-panel{position:absolute;top:58px;left:50%;transform:translateX(-50%);z-index:999;width:min(560px,calc(100% - 360px))}.search-float{background:#fff;border-radius:24px;box-shadow:0 7px 24px #0003;display:flex;align-items:center;padding:5px 7px 5px 16px}.search-float input{border:0;outline:0;flex:1;font-size:14px;padding:8px;background:transparent}.search-btn{width:34px;height:34px;border:0;border-radius:50%;background:#1677ff;color:#fff;cursor:pointer;font-size:16px;margin-left:4px}.search-clear{width:28px;height:28px;border:0;border-radius:50%;background:#eef2f7;color:#667085;cursor:pointer;display:none}.search-clear:hover{background:#ffd8bf;color:#d4380d}.search-result{margin-top:7px;max-height:168px;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 8px 28px #0003;display:none}.result-head{position:sticky;top:0;background:#f7fbff;border-bottom:1px solid #edf0f5;padding:7px 10px;font-size:12px;color:#667085;display:flex;justify-content:space-between;align-items:center}.result-head button{border:0;background:#fff;color:#1677ff;border-radius:6px;padding:4px 7px;cursor:pointer}.result-item{padding:9px 14px;border-bottom:1px solid #edf0f5;cursor:pointer;font-size:13px}.result-item:hover{background:#e6f4ff}.result-more{padding:8px 14px;text-align:center;color:#667085;font-size:12px;background:#fafafa}.side{position:absolute;top:58px;left:14px;bottom:36px;width:286px;z-index:998;background:#fff;border-radius:16px;box-shadow:0 8px 26px #0003;overflow:hidden;display:flex;flex-direction:column}.side-head{padding:13px 14px;background:#f7fbff;border-bottom:1px solid #edf0f5;display:flex;justify-content:space-between;align-items:center}.side-title{font-weight:700;color:#102a43}.side-body{overflow:auto;padding:10px 12px}.module-title{font-weight:700;color:#344054;margin:10px 0 8px;display:flex;align-items:center;justify-content:space-between}.layer-row{display:flex;align-items:center;gap:7px;padding:8px 0;border-bottom:1px solid #f0f2f5}.layer-row span.name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.layer-count{font-size:12px;color:#667085}.mini-btn{border:0;border-radius:7px;padding:7px 9px;background:#1677ff;color:#fff;cursor:pointer}.mini-btn.gray{background:#667085}.mini-btn.red{background:#d4380d}.mini-btn.green{background:#12a150}.tool-card{position:absolute;right:14px;top:58px;z-index:997;width:292px;background:#fff;border-radius:16px;box-shadow:0 8px 26px #0003;overflow:hidden;display:none}.tool-card.open{display:block}.tool-head{background:#f7fbff;padding:12px 14px;font-weight:700;display:flex;justify-content:space-between;border-bottom:1px solid #edf0f5}.tool-body{padding:12px}.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.row label{min-width:72px;color:#344054}.row input[type=number]{width:84px}.row input[type=color]{width:38px;height:28px;border:0;background:transparent}.row input[type=text]{flex:1;min-width:120px}.hint{font-size:12px;color:#667085;line-height:1.6}.statusbar{position:absolute;left:0;right:0;bottom:0;height:28px;z-index:1000;background:#102a43;color:#dbeafe;display:flex;align-items:center;gap:16px;padding:0 14px;font-size:12px}.filename-label,.kml-layer-label{font-size:11px;font-weight:bold;color:#fff;text-shadow:-1px -1px 2px #f00,1px -1px 2px #f00,-1px 1px 2px #f00,1px 1px 2px #f00;white-space:nowrap}.open-img-btn{padding:6px 10px;background:#1677ff;color:white;border:none;border-radius:5px;cursor:pointer}.img-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.9);z-index:99999;display:none;align-items:center;justify-content:center}.img-modal img{max-width:90%;max-height:90%;border:3px solid #fff}.close-modal{position:absolute;top:20px;right:30px;color:#fff;font-size:36px;cursor:pointer}.hide-left .side{display:none}.hide-left .search-panel{width:min(620px,calc(100% - 50px))}@media(max-width:900px){.side{width:250px}.search-panel{left:58%;width:calc(100% - 330px)}.brand{display:none}.menu-item{padding:0 8px}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">图斑巡查平台</div>
+  <div class="menu">
+    <div class="menu-item">图层工具
+      <div class="dropdown">
+        <div class="drop-title">数据加载</div>
+        <button class="drop-btn" onclick="document.getElementById('kmlFileInput').click()">📂 加载KML/KMZ</button>
+        <button class="drop-btn" onclick="document.getElementById('kmlFileInput').click()">🛩 加载航线</button>
+        <div class="drop-title">图层操作</div>
+        <button class="drop-btn" onclick="showAllPhotos()">👁 显示全部照片</button>
+        <button class="drop-btn" onclick="clearAllKmlLayers()">🗑 清空KML图层</button>
+      </div>
+    </div>
+    <div class="menu-item">筛选工具
+      <div class="dropdown">
+        <button class="drop-btn" onclick="openTool('filterTool')">🟢 图斑/照片筛选</button>
+        <button class="drop-btn" onclick="hidePhotosOutsideGreaterThan()">📍 隐藏图斑外照片</button>
+        <button class="drop-btn" onclick="thinPhotosBySpacing()">📷 过滤近距照片</button>
+        <button class="drop-btn" onclick="showAllPhotos()">↩ 恢复全部照片</button>
+      </div>
+    </div>
+    <div class="menu-item">地图纠正
+      <div class="dropdown">
+        <button class="drop-btn" onclick="openTool('correctTool')">🧭 影像偏移校正</button>
+        <button class="drop-btn" onclick="resetImageOffset()">↩ 重置偏移</button>
+      </div>
+    </div>
+    <div class="menu-item">样式设置
+      <div class="dropdown">
+        <button class="drop-btn" onclick="openTool('styleTool')">🎨 图层颜色/标注</button>
+        <button class="drop-btn" onclick="toggleLeftPanel()">📋 显示/隐藏左侧图层</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="search-panel" id="searchPanel">
+  <div class="search-float"><span style="font-size:18px">🔍</span><input id="searchBox" type="text" autocomplete="off" placeholder="搜索图片名、图斑编号、图斑名称，回车定位" /><button id="searchClearBtn" class="search-clear" onclick="clearSearch()" title="清空搜索">×</button><button class="search-btn" onclick="searchMap()">⌕</button></div>
+  <div id="searchResult" class="search-result"></div>
+</div>
+<div class="side" id="leftPanel">
+  <div class="side-head"><div class="side-title">图层管理</div><button class="mini-btn gray" onclick="toggleLeftPanel()">收起</button></div>
+  <div class="side-body">
+    <div class="module-title">基础图层 <span class="layer-count" id="baseCount"></span></div>
+    <div class="layer-row"><input type="checkbox" id="photoLayerToggle" checked onchange="togglePhotoLayer()"><span class="name">照片图层</span><span id="photoCount" class="layer-count">0</span></div>
+    <div class="layer-row"><input type="checkbox" id="photoLabelToggle" checked onchange="applyPhotoLabelStyle()"><span class="name">照片名称标注</span></div>
+    <div class="module-title">KML / 航线图层 <button class="mini-btn" onclick="document.getElementById('kmlFileInput').click()">加载</button></div>
+    <input type="file" id="kmlFileInput" accept=".kml,.kmz" multiple style="display:none" onchange="handleKmlFiles(this.files)">
+    <div id="kmlLayerManager"><span class="hint">暂无KML图层</span></div>
+    <div class="module-title">统计信息</div>
+    <div class="hint" id="statInfo">照片：0 张<br>KML：0 个<br>图斑：0 个</div>
+  </div>
+</div>
+<div id="styleTool" class="tool-card"><div class="tool-head">样式设置 <button class="mini-btn gray" onclick="closeTools()">关闭</button></div><div class="tool-body">
+  <div class="module-title">照片标注</div>
+  <div class="row"><label>文字大小</label><input id="labelSize" type="number" value="11" min="8" max="60" onchange="applyPhotoLabelStyle()"><label>文字色</label><input id="labelColor" type="color" value="#ffffff" onchange="applyPhotoLabelStyle()"></div>
+  <div class="row"><label>边框色</label><input id="labelStroke" type="color" value="#ff0000" onchange="applyPhotoLabelStyle()"><label>边框宽</label><input id="labelStrokeWidth" type="number" value="2" min="0" max="8" onchange="applyPhotoLabelStyle()"></div>
+  <div class="module-title">默认KML颜色</div>
+  <div class="row"><label>填充色</label><input id="defaultKmlFill" type="color" value="#0099ff"><label>线条色</label><input id="defaultKmlLine" type="color" value="#0099ff"></div>
+  <div class="hint">导入后也可以在左侧图层列表中单独修改每个KML颜色。无照片/未匹配KML会自动使用红色。</div>
+</div></div>
+<div id="filterTool" class="tool-card"><div class="tool-head">筛选工具 <button class="mini-btn gray" onclick="closeTools()">关闭</button></div><div class="tool-body">
+  <div class="row"><label>图斑外距离</label><input id="outsideDist" type="number" value="20" min="0" max="999"> 米以上隐藏</div>
+  <div class="row"><button class="mini-btn" onclick="hidePhotosOutsideGreaterThan()">隐藏外侧照片</button><button class="mini-btn gray" onclick="showAllPhotos()">恢复全部</button></div>
+  <div class="row"><label>照片间距</label><input id="photoMinSpacing" type="number" value="10" min="0"> 米内只保留1张</div>
+  <div class="row"><button class="mini-btn" onclick="thinPhotosBySpacing()">过滤近距照片</button><button class="mini-btn gray" onclick="showAllPhotos()">恢复照片</button></div>
+  <div class="hint" id="filterInfo">筛选结果会显示在这里。</div>
+</div></div>
+<div id="correctTool" class="tool-card"><div class="tool-head">地图纠正 <button class="mini-btn gray" onclick="closeTools()">关闭</button></div><div class="tool-body">
+  <div class="row"><label>影像东偏移</label><input id="imgEastOffset" type="number" value="0" step="0.1"> 米</div>
+  <div class="row"><label>影像南偏移</label><input id="imgSouthOffset" type="number" value="0" step="0.1"> 米</div>
+  <div class="row"><button class="mini-btn" onclick="applyImageOffset()">应用偏移</button><button class="mini-btn gray" onclick="resetImageOffset()">重置</button></div>
+  <div class="hint">用于现场发现底图影像与GPS点位有固定偏差时临时校正显示。</div>
+</div></div>
+<div id="map"></div>
+<div class="statusbar"><span id="coordStatus">经度：--　纬度：--</span><span id="zoomStatus">级别：--</span><span id="layerStatus">照片：0　KML：0　图斑：0</span></div>
+<div class="img-modal" id="imgModal"><span class="close-modal" onclick="closePreview()">×</span><img id="previewImg"></div>
+<script>
+const pointData=[];const tdtKey="788a5385938d9d30fff4bc9fe091dfa7";const amapKey="43925f5fbfa59a7e2f4fc1a0e8ce4773";
+let map,kmlLayers=[],photoMarkers=[],photoLabels=[],allPhotoItems=[],landFeatures=[],searchObjects=[];let currentImgOffset={east:0,south:0};
+const imgModal=document.getElementById('imgModal'),previewImg=document.getElementById('previewImg');
+function $(id){return document.getElementById(id)}
+function openTool(id){closeTools();$(id).classList.add('open')}function closeTools(){['styleTool','filterTool','correctTool'].forEach(id=>$(id).classList.remove('open'))}
+function toggleLeftPanel(){document.body.classList.toggle('hide-left')}
+function closePreview(){imgModal.style.display='none';previewImg.src=''}
+function metersPerPixel(){const lat=(map&&map.getCenter()?map.getCenter().lat:35)*Math.PI/180;return 156543.03392*Math.cos(lat)/Math.pow(2,map.getZoom())}
+function applyImageOffset(){currentImgOffset.east=Number($('imgEastOffset').value||0);currentImgOffset.south=Number($('imgSouthOffset').value||0);updateImageOffset()}
+function resetImageOffset(){currentImgOffset={east:0,south:0};$('imgEastOffset').value=0;$('imgSouthOffset').value=0;updateImageOffset()}
+function updateImageOffset(){if(!map)return;const mpp=Math.max(metersPerPixel(),.000001),dx=currentImgOffset.east/mpp,dy=currentImgOffset.south/mpp,pane=map.getPane('tilePane');if(pane){pane.style.marginLeft=dx+'px';pane.style.marginTop=dy+'px'}}
+function coordList(text){return text.trim().split(/\s+/).filter(Boolean).map(x=>{let s=x.split(',');return [Number(s[0]),Number(s[1])]})}
+function kml2geo(kmlStr){const d=new DOMParser().parseFromString(kmlStr,'text/xml'),gj={type:'FeatureCollection',features:[]};d.querySelectorAll('Placemark').forEach(pm=>{const n=(pm.querySelector('name')||{}).textContent||'',desc=(pm.querySelector('description')||{}).textContent||'';pm.querySelectorAll('Point>coordinates').forEach(pt=>{const c=coordList(pt.textContent)[0];gj.features.push({type:'Feature',properties:{name:n,desc},geometry:{type:'Point',coordinates:c}})});pm.querySelectorAll('LineString>coordinates').forEach(ln=>gj.features.push({type:'Feature',properties:{name:n,desc},geometry:{type:'LineString',coordinates:coordList(ln.textContent)}}));let polys=[];pm.querySelectorAll('Polygon').forEach(poly=>{const outer=poly.querySelector('outerBoundaryIs>LinearRing>coordinates');if(!outer)return;const rings=[coordList(outer.textContent)];poly.querySelectorAll('innerBoundaryIs>LinearRing>coordinates').forEach(inner=>rings.push(coordList(inner.textContent)));polys.push(rings)});if(polys.length===1)gj.features.push({type:'Feature',properties:{name:n,desc},geometry:{type:'Polygon',coordinates:polys[0]}});if(polys.length>1)gj.features.push({type:'Feature',properties:{name:n,desc},geometry:{type:'MultiPolygon',coordinates:polys}})});return gj}
+function setLabelCss(){const size=$('labelSize').value||11,color=$('labelColor').value,stroke=$('labelStroke').value,sw=Number($('labelStrokeWidth').value||2);let shadows=[];for(let dx=-sw;dx<=sw;dx++)for(let dy=-sw;dy<=sw;dy++)if(dx||dy)shadows.push(dx+'px '+dy+'px '+sw+'px '+stroke);let st=$('dynLabelStyle');if(!st){st=document.createElement('style');st.id='dynLabelStyle';document.head.appendChild(st)}st.innerHTML='.filename-label{font-size:'+size+'px;color:'+color+';text-shadow:'+shadows.join(',')+';}'}
+function applyPhotoLabelStyle(){setLabelCss();const show=$('photoLabelToggle').checked;photoLabels.forEach(l=>{const el=l.getElement();if(el)el.style.display=show?'':'none'})}
+function togglePhotoLayer(){const show=$('photoLayerToggle').checked;photoMarkers.forEach(m=>show?m.addTo(map):map.removeLayer(m));photoLabels.forEach(l=>show?l.addTo(map):map.removeLayer(l));applyPhotoLabelStyle();updateStats()}
+function showPhotoItem(item,visible){if(visible){if(!map.hasLayer(item.marker))item.marker.addTo(map);if(!map.hasLayer(item.label))item.label.addTo(map)}else{map.removeLayer(item.marker);map.removeLayer(item.label)}}
+function showAllPhotos(){allPhotoItems.forEach(x=>showPhotoItem(x,true));$('filterInfo').textContent='已显示全部照片';$('photoLayerToggle').checked=true;applyPhotoLabelStyle();updateStats()}
+function photoLandDistance(item){const pt=turf.point([item.lon,item.lat]);let inside=false,dist=Infinity;landFeatures.forEach(f=>{try{if(turf.booleanPointInPolygon(pt,f))inside=true;const d=turf.pointToPolygonDistance(pt,f,{units:'meters'});dist=Math.min(dist,Math.abs(d))}catch(e){}});return {inside,dist}}
+function hidePhotosOutsideGreaterThan(){if(!landFeatures.length){alert('请先导入KML图斑');return}const threshold=Number($('outsideDist').value||20);let hidden=0,shown=0;allPhotoItems.forEach(item=>{const r=photoLandDistance(item),hide=(!r.inside&&r.dist>=threshold);showPhotoItem(item,!hide);hide?hidden++:shown++});$('filterInfo').textContent='已隐藏图斑外 '+threshold+' 米以上照片：'+hidden+' 张，当前显示 '+shown+'/'+allPhotoItems.length+' 张';$('photoLayerToggle').checked=true;applyPhotoLabelStyle();updateStats()}
+function thinPhotosBySpacing(){const spacing=Number($('photoMinSpacing').value||10);if(spacing<=0){showAllPhotos();return}const kept=[];let hidden=0;allPhotoItems.forEach(item=>{let tooClose=false;for(const k of kept){try{const d=turf.distance(turf.point([item.lon,item.lat]),turf.point([k.lon,k.lat]),{units:'kilometers'})*1000;if(d<spacing){tooClose=true;break}}catch(e){}}if(tooClose){showPhotoItem(item,false);hidden++}else{kept.push(item);showPhotoItem(item,true)}});$('filterInfo').textContent='已按照片间距 '+spacing+' 米过滤：隐藏 '+hidden+' 张，保留 '+kept.length+'/'+allPhotoItems.length+' 张';$('photoLayerToggle').checked=true;applyPhotoLabelStyle();updateStats()}
+function fileColors(name){let fill=$('defaultKmlFill').value,line=$('defaultKmlLine').value;if(name.includes('无照片')||name.includes('未匹配')){fill='#ff0000';line='#ff0000'}else if(name.includes('未完成')){fill='#ffff00';line='#ffff00'}else if(name.includes('进行中')){fill='#ff9900';line='#ff9900'}else if(name.includes('已完成')){fill='#00bb22';line='#00bb22'}return {fill,line}}
+function handleKmlFiles(files){if(!files||!files.length)return;Array.from(files).forEach(file=>{if(file.name.toLowerCase().endsWith('.kmz')){alert(file.name+' 是KMZ压缩文件，当前地图窗口请先解压出KML后加载。');return}const r=new FileReader();r.onload=e=>{try{const gj=kml2geo(e.target.result),c=fileColors(file.name);const layer=L.geoJSON(gj,{style:()=>({fillColor:c.fill,color:c.line,weight:2,fillOpacity:.45}),pointToLayer:(f,latlng)=>L.circleMarker(latlng,{radius:7,color:c.line,fillColor:c.fill,fillOpacity:.85}),onEachFeature:(f,l)=>{const nm=f.properties.name||'无名称';l.bindPopup('<b>图斑名称：'+nm+'</b><br>'+(f.properties.desc||''));searchObjects.push({type:'图斑',name:nm,desc:f.properties.desc||'',layer:l});if(f.geometry.type==='Polygon'||f.geometry.type==='MultiPolygon')landFeatures.push(f)}}).addTo(map);kmlLayers.push({name:file.name,layer,visible:true,color:c,featureCount:gj.features.length});updateKmlLayerUI();updateStats();const bd=layer.getBounds();if(bd.isValid())map.fitBounds(bd,{padding:[40,40]})}catch(err){alert(file.name+' 解析失败:'+err.message)}};r.readAsText(file)})}
+function updateKmlLayerUI(){const wrap=$('kmlLayerManager');wrap.innerHTML='';if(!kmlLayers.length){wrap.innerHTML='<span class="hint">暂无KML图层</span>';return}kmlLayers.forEach((it,idx)=>{const d=document.createElement('div');d.className='layer-row';const ck=document.createElement('input');ck.type='checkbox';ck.checked=it.visible;ck.onchange=()=>{it.visible=ck.checked;it.visible?it.layer.addTo(map):map.removeLayer(it.layer);updateStats()};const n=document.createElement('span');n.className='name';n.title=it.name;n.textContent=it.name;const col=document.createElement('input');col.type='color';col.value=it.color.line;col.onchange=()=>{it.color.line=col.value;it.color.fill=col.value;if(it.layer.setStyle)it.layer.setStyle({color:col.value,fillColor:col.value})};const del=document.createElement('button');del.className='mini-btn red';del.textContent='删';del.onclick=()=>{map.removeLayer(it.layer);kmlLayers.splice(idx,1);rebuildLandFeatures();searchObjects=searchObjects.filter(x=>x.type!=='图斑'||!x.layer||map.hasLayer(x.layer));updateKmlLayerUI();updateStats()};d.append(ck,n,col,del);wrap.appendChild(d)})}
+function rebuildLandFeatures(){landFeatures=[];kmlLayers.forEach(it=>it.layer.eachLayer(l=>{if(l.feature&&(l.feature.geometry.type==='Polygon'||l.feature.geometry.type==='MultiPolygon'))landFeatures.push(l.feature)}))}
+function clearAllKmlLayers(){kmlLayers.forEach(x=>map.removeLayer(x.layer));kmlLayers=[];landFeatures=[];searchObjects=searchObjects.filter(x=>x.type==='图片');updateKmlLayerUI();clearSearch();updateStats()}
+function searchMap(){const input=$('searchBox'),q=input.value.trim().toLowerCase(),box=$('searchResult'),clearBtn=$('searchClearBtn');box.innerHTML='';clearBtn.style.display=q?'block':'none';if(!q){box.style.display='none';return}const all=searchObjects.filter(x=>(x.name||'').toLowerCase().includes(q)||(x.desc||'').toLowerCase().includes(q));const res=all.slice(0,8);box.style.display='block';if(!res.length){box.innerHTML='<div class="result-head"><span>搜索结果</span><button onclick="hideSearchResult()">收起</button></div><div class="result-item">没有找到匹配的图片或图斑</div>';return}box.innerHTML='<div class="result-head"><span>找到 '+all.length+' 项，显示前 '+res.length+' 项</span><button onclick="clearSearch()">清空</button></div>';res.forEach(x=>{const div=document.createElement('div');div.className='result-item';div.innerHTML='<b>'+x.type+'</b>：'+(x.name||'无名称')+(x.desc?'<br><span style="color:#667085">'+String(x.desc).slice(0,60)+'</span>':'');div.onclick=()=>locateObject(x);box.appendChild(div)});if(all.length>8){const more=document.createElement('div');more.className='result-more';more.textContent='结果较多，请继续输入更准确的图斑号或照片名';box.appendChild(more)}}
+function hideSearchResult(){$('searchResult').style.display='none'}
+function clearSearch(){$('searchBox').value='';$('searchClearBtn').style.display='none';$('searchResult').innerHTML='';$('searchResult').style.display='none'}
+function locateObject(x){try{hideSearchResult();if(x.marker){map.setView(x.marker.getLatLng(),18);x.marker.openPopup();flashLatLng(x.marker.getLatLng())}else if(x.layer){if(x.layer.getBounds){const b=x.layer.getBounds();if(b.isValid())map.fitBounds(b,{padding:[90,90]})}else if(x.layer.getLatLng){map.setView(x.layer.getLatLng(),18)}x.layer.openPopup&&x.layer.openPopup();highlightLayer(x.layer)}}catch(e){console.log(e)}}
+function flashLatLng(latlng){const c=L.circleMarker(latlng,{radius:18,color:'#ff4d4f',weight:3,fillColor:'#ff4d4f',fillOpacity:.25}).addTo(map);setTimeout(()=>map.removeLayer(c),2600)}
+function layerCenter(layer){try{if(layer.getBounds){const b=layer.getBounds();if(b.isValid())return b.getCenter()}if(layer.getLatLng)return layer.getLatLng()}catch(e){}return map.getCenter()}
+function highlightLayer(layer){
+  try{
+    const center=layerCenter(layer);
+    const halo=L.circleMarker(center,{radius:26,color:'#ff0000',weight:5,fillColor:'#ffff00',fillOpacity:.35,opacity:1}).addTo(map);
+    let oldStyle=null,canStyle=!!layer.setStyle;
+    if(canStyle){
+      oldStyle={color:layer.options.color,weight:layer.options.weight,fillColor:layer.options.fillColor,fillOpacity:layer.options.fillOpacity,opacity:layer.options.opacity};
+    }
+    let count=0;
+    const timer=setInterval(()=>{
+      count++;
+      if(canStyle){
+        const on=count%2===1;
+        layer.setStyle({color:on?'#ff0000':'#ffff00',weight:on?6:3,fillColor:on?'#ffff00':'#ff0000',fillOpacity:on?.70:.25,opacity:1});
+        if(layer.bringToFront)layer.bringToFront();
+      }
+      halo.setStyle({radius:count%2===1?34:22,fillOpacity:count%2===1?.45:.15});
+      if(count>=8){
+        clearInterval(timer);
+        map.removeLayer(halo);
+        if(canStyle&&oldStyle)layer.setStyle(oldStyle);
+      }
+    },420);
+  }catch(e){console.log(e)}
+}
+function updateStats(){const kmlCount=kmlLayers.length,landCount=landFeatures.length;const photoVisible=allPhotoItems.filter(x=>map.hasLayer(x.marker)).length;$('photoCount').textContent=photoVisible+'/'+allPhotoItems.length;$('statInfo').innerHTML='照片：'+allPhotoItems.length+' 张<br>KML：'+kmlCount+' 个<br>图斑：'+landCount+' 个';$('layerStatus').textContent='照片：'+photoVisible+'/'+allPhotoItems.length+'　KML：'+kmlCount+'　图斑：'+landCount}
+function initMap(){map=L.map('map',{minZoom:2,maxZoom:19,worldCopyJump:false,noWrap:true});const esri=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:19,maxZoom:19,noWrap:true,attribution:'ESRI卫星图'}),tdt=L.tileLayer('https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk='+tdtKey,{maxNativeZoom:18,maxZoom:18,noWrap:true,attribution:'天地图'}),gaodeVec=L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{subdomains:['1','2','3','4'],maxZoom:19,attribution:'高德地图'}),gaodeImg=L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',{subdomains:['1','2','3','4'],maxZoom:19,attribution:'高德卫星图'});L.control.layers({'ESRI卫星图':esri,'天地图卫星图':tdt,'高德矢量图':gaodeVec,'高德卫星图':gaodeImg},{},{position:'bottomright'}).addTo(map);esri.addTo(map);const camIcon=L.icon({iconUrl:'https://img.icons8.com/fluency/48/000000/camera.png',iconSize:[24,24],iconAnchor:[12,12]});if(pointData&&pointData.length){const bd=[];pointData.forEach(it=>{bd.push([it.lat,it.lon]);const mk=L.marker([it.lat,it.lon],{icon:camIcon}).addTo(map),lb=L.marker([it.lat,it.lon],{icon:L.divIcon({className:'filename-label',html:it.name,iconSize:null})}).addTo(map);const safePath=String(it.fullPath||'').replace(/\\/g,'/');mk.bindPopup('<b>文件名：'+it.name+'</b><br>纬度:'+Number(it.lat).toFixed(8)+'<br>经度:'+Number(it.lon).toFixed(8)+'<br><button class="open-img-btn" onclick="previewImg.src=\'file:///'+safePath+'\';imgModal.style.display=\'flex\'">预览图片</button>');photoMarkers.push(mk);photoLabels.push(lb);const obj={type:'图片',marker:mk,label:lb,lat:it.lat,lon:it.lon,name:it.name,desc:it.fullPath||''};allPhotoItems.push(obj);searchObjects.push(obj)});map.fitBounds(bd)}else map.setView([35,105],5);setLabelCss();updateKmlLayerUI();updateStats();map.on('zoomend moveend baselayerchange',()=>{updateImageOffset();$('zoomStatus').textContent='级别：'+map.getZoom()});map.on('mousemove',e=>{$('coordStatus').textContent='经度：'+e.latlng.lng.toFixed(6)+'　纬度：'+e.latlng.lat.toFixed(6)});$('zoomStatus').textContent='级别：'+map.getZoom();updateImageOffset()}
+window.addEventListener('load',initMap);imgModal.addEventListener('click',e=>{if(e.target===imgModal)closePreview()});$('searchBox').addEventListener('input',()=>{const q=$('searchBox').value.trim();$('searchClearBtn').style.display=q?'block':'none';if(q.length>=2)searchMap();else hideSearchResult()});$('searchBox').addEventListener('keydown',e=>{if(e.key==='Enter')searchMap();if(e.key==='Escape')clearSearch()});document.addEventListener('click',e=>{const panel=$('searchPanel');if(panel&&!panel.contains(e.target))hideSearchResult()});
+</script>
+</body>
+</html>

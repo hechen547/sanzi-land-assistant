@@ -1,0 +1,1332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>航线规划器</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root { --panel:#111827; --panel2:#182235; --text:#e5e7eb; --muted:#9ca3af; --accent:#22c55e; --border:#263244; }
+    *{box-sizing:border-box} body{margin:0;font-family:"Microsoft YaHei",Arial,sans-serif;background:#0b1020;color:var(--text);overflow:hidden}
+    .app{display:grid;grid-template-columns:320px 1fr 330px;grid-template-rows:56px 1fr;height:100vh;width:100vw}
+    .top{grid-column:1/4;display:flex;align-items:center;gap:14px;padding:0 18px;background:#0f172a;border-bottom:1px solid var(--border)}
+    .brand{font-weight:700;font-size:18px;letter-spacing:.5px}.tabbar{display:flex;gap:6px;margin-bottom:10px}.tab{flex:1;border:1px solid #334155;background:#0b1220;color:#cbd5e1;border-radius:10px;padding:8px 6px;cursor:pointer;font-size:12px;font-weight:700}.tab.active{background:#1d4ed8;color:#fff;border-color:#3b82f6}.manual-on{box-shadow:0 0 0 2px #22c55e inset}.pill{font-size:12px;color:#a7f3d0;border:1px solid #14532d;background:#052e16;padding:4px 9px;border-radius:999px}
+    .left,.right{background:rgba(17,24,39,.96);border-right:1px solid var(--border);overflow:auto;padding:14px}.right{border-right:none;border-left:1px solid var(--border)}
+    #map{height:100%;width:100%;background:#030712}.section{border:1px solid var(--border);border-radius:12px;background:rgba(24,34,53,.72);padding:10px;margin-bottom:10px}.section h3{font-size:14px;margin:0 0 10px;color:#fff}
+    label{display:block;font-size:12px;color:var(--muted);margin:9px 0 4px} select,input{width:100%;background:#0b1220;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:8px;outline:none} input[type=file]{padding:7px;font-size:12px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btn{width:100%;border:0;border-radius:9px;padding:9px 10px;margin-top:7px;background:#2563eb;color:white;font-weight:600;cursor:pointer}.btn:hover{filter:brightness(1.1)}.btn.green{background:#16a34a}.btn.gray{background:#475569}.btn.red{background:#dc2626}.btn.orange{background:#ea580c}
+    .hint{font-size:12px;color:var(--muted);line-height:1.6}.status{font-size:12px;color:#cbd5e1;line-height:1.6;white-space:pre-wrap;max-height:160px;overflow:auto}.stat{display:grid;grid-template-columns:1fr auto;gap:8px;font-size:13px;padding:4px 0;border-bottom:1px dashed #334155}.stat:last-child{border-bottom:0}.badge{display:inline-block;padding:2px 6px;border-radius:6px;background:#334155;font-size:12px}.hidden{display:none!important}.divider{height:1px;background:#263244;margin:10px 0}.toolrow{display:flex;gap:8px}.toolrow .btn{margin-top:0}.leaflet-popup-content{font-family:"Microsoft YaHei";font-size:13px}.popup-input{width:90px;color:#111;background:#fff;border:1px solid #999;border-radius:4px;padding:3px}.wp-dot{width:28px;height:28px;border-radius:999px;background:#2563eb;color:#fff;border:2px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}.wp-dot.start{background:#f97316}.insert-plus{width:20px;height:20px;border-radius:999px;background:rgba(34,197,94,.55);color:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.75);box-shadow:0 1px 5px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;line-height:18px;cursor:pointer;opacity:.55;transition:all .15s}.insert-plus:hover{opacity:.85;background:rgba(34,197,94,.75);transform:scale(1.04)}.nofly-vertex{width:12px;height:12px;border-radius:999px;background:#ef4444;border:2px solid #fff}.mini-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mini-actions .btn{margin-top:8px}.compact-note{font-size:12px;color:#a7f3d0;margin-top:6px;line-height:1.4}.switch-card{height:37px;display:flex;align-items:center;gap:8px;background:#0b1220;border:1px solid #334155;border-radius:8px;padding:0 10px;margin-top:4px;color:#e5e7eb;font-size:12px}.switch-card input{width:auto;margin:0}.group-label{background:#111827;color:#fff;border:1px solid #fff;border-radius:10px;padding:2px 6px;font-size:12px;font-weight:800;box-shadow:0 1px 6px rgba(0,0,0,.45)}
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="top"><div class="brand">航线规划器</div><span class="pill">自动航线 / 手动航点 / KMZ导出</span></div>
+  <aside class="left">
+    <div class="section"><h3>一、导入任务</h3><input id="fileInput" type="file" accept=".kml,.kmz" multiple><button class="btn" onclick="importFiles()">导入 KML / KMZ</button></div>
+    <div class="section" id="droneSection"><h3>二、机型选择</h3><label>无人机型号</label><select id="droneModel" onchange="onDroneChanged()"><option value="mini4pro">Mini 4 Pro（消费机）</option><option value="m4pro">御4 Pro（消费机）</option><option value="air3s">Air 3 / Air 3S（按Mini4Pro拍照动作）</option><option value="m3e">御3E（行业机）</option><option value="m3m">御3M（行业机）</option><option value="m3t">御3T（行业机）</option><option value="m4e">御4E（行业机）</option><option value="m4t">御4T（行业机）</option><option value="m300">M300 RTK（行业机）</option><option value="m350">M350 RTK（行业机）</option><option value="m400">M400（待样本校准）</option><option value="litox1">Lito X1</option><option value="wpml">DJI WPML 通用</option><option value="preview">通用 KML 预览</option></select><div id="payloadWrap" class="hidden"><label>负载型号</label><select id="payloadModel" onchange="onDroneChanged()"><option value="h20t">H20T</option><option value="p1">P1（保守模式）</option><option value="l1">L1（保守模式）</option></select></div><div id="droneHint" class="compact-note"></div></div>
+    <div class="section" id="commonParams"><h3>三、飞行参数</h3><div class="row"><div><label>飞行高度 m</label><input id="height" type="number" value="80"></div><div><label>飞行速度 m/s</label><input id="speed" type="number" value="10"></div></div><div class="row"><div><label>云台角度 °</label><input id="gimbal" type="number" value="-90"></div><div id="hoverWrap"><label>悬停秒数</label><input id="hover" type="number" value="0"></div></div><div id="enterpriseTurnWrap"><label>行业机转弯方式</label><select id="enterpriseTurnMode"><option value="coordinateTurn">1. 协调转弯，不过点提前转弯</option><option value="straightStop" selected>2. 直线飞行，飞行器到点停</option><option value="smoothPass">3. 平滑过点，提前转弯</option><option value="curveStop">4. 曲线飞行，飞行器到点停</option><option value="curvePass">5. 曲线飞行，飞行器到点不停</option></select></div><div class="row"><div id="takeoffHeightWrap"><label>起飞安全高度 m</label><input id="takeoffHeight" type="number" value="80"></div></div></div>
+    <div class="section"><h3>四、航线模式</h3><div class="tabbar"><button id="tabAuto" class="tab active" onclick="setPlanMode('auto')">自动生成航线</button><button id="tabManual" class="tab" onclick="setPlanMode('manual')">手动绘制航点</button></div></div>
+    <div class="section" id="autoTemplateSection"><h3>自动航线</h3><label>任务模板</label><select id="templateType" onchange="onTemplateChanged()"><option value="sanzi">三资巡查</option><option value="ortho">正射测绘</option><option value="oblique">倾斜摄影</option></select></div>
+    <div class="section" id="sanziParams"><h3>三资巡查参数</h3><div class="row"><div><label>每图斑照片数</label><input id="photosPerPlot" type="number" value="1" min="1"></div><div><label>每图斑最多照片数</label><input id="maxPhotos" type="number" value="10" min="1"></div></div><label>大面积阈值 ㎡</label><input id="areaThreshold" type="number" value="2000"><div id="actionWrap"><label>航点动作（行业机）</label><select id="pointAction"><option value="photo">拍照</option><option value="hover">悬停</option><option value="video">录像</option></select></div><div id="consumerActionTip" class="hint hidden">消费机按机型库固定动作导出。</div><label>航线顺序方案</label><select id="routeOrder" onchange="onRouteOrderChanged()"><option value="sortie" selected>按信号半径分架次</option><option value="aircraft">按照飞机数量规划</option><option value="region">区域优先</option><option value="shortest">最短距离</option></select><div id="aircraftCountWrap" class="hidden"><label>飞机数量</label><input id="aircraftCount" type="number" value="2" min="1" max="6"><div class="hint">按连续区域切分，多台飞机各飞一片，避免航线穿插。</div></div><label>单个作业点控制半径 m</label><input id="signalRadius" type="number" value="1400"></div>
+    <div class="section hidden" id="orthoParams"><h3>正射测绘参数</h3><div class="row"><div><label>航向重叠率 %</label><input id="frontOverlap" type="number" value="80"></div><div><label>旁向重叠率 %</label><input id="sideOverlap" type="number" value="70"></div></div><label>边界扩展 m</label><input id="buffer" type="number" value="20"></div>
+    <div class="section hidden" id="obliqueParams"><h3>倾斜摄影参数</h3><div class="row"><div><label>航向重叠率 %</label><input id="obFrontOverlap" type="number" value="80"></div><div><label>旁向重叠率 %</label><input id="obSideOverlap" type="number" value="70"></div></div><label>边界扩展 m</label><input id="obBuffer" type="number" value="20"></div>
+    <div class="section hidden" id="manualParams"><h3>手动绘制航点</h3><div class="mini-actions"><button id="manualDrawBtn" class="btn green" onclick="toggleManualDraw()">开始绘制</button><button class="btn gray" onclick="finishManualDraw()">生成航点</button></div><div class="mini-actions"><button class="btn orange" onclick="toggleSnap()">航点吸附：开</button><button class="btn red" onclick="clearManualWaypoints()">清空手动航点</button></div></div>
+    <div class="section"><h3>五、禁飞区</h3><div class="mini-actions"><button class="btn red" onclick="startNoFlyDraw()">绘制禁飞区</button><button class="btn gray" onclick="clearNoFlyZones()">清空禁飞区</button></div><div id="noflyInfo" class="hint">禁飞区：0 个；绘制时双击确认，航线自动更新。</div></div>
+    <div class="section"><h3>六、生成与输出</h3><button class="btn green" onclick="generateMission()">生成 / 刷新航线</button><label>输出方式</label><select id="exportMode" onchange="onExportModeChanged()"><option value="sortie" selected>按航线任务分组（默认）</option><option value="split">按航点数量切割（应急）</option></select><div id="splitCountWrap" class="hidden"><label>最多航点</label><input id="splitCount" type="number" value="500"></div><div class="mini-actions"><button class="btn orange" onclick="previewSelectedGroups()">预览</button><button class="btn green" onclick="exportSelectedKMZ()">一键导出 KMZ+高清图+任务图KML</button></div></div>
+  </aside>
+  <main id="map"></main>
+  <aside class="right">
+    <div class="section"><h3>航点设置</h3><div id="selectedInfo" class="hint">点击航点后可修改、删除、插入或设为起飞点。手动绘制的航点同样在这里修改。</div><div id="editPanel" class="hidden"><label>航点编号</label><input id="editIndex" readonly><div class="row"><div><label>高度</label><input id="editHeight" type="number"></div><div><label>速度</label><input id="editSpeed" type="number"></div></div><div class="row"><div><label>动作</label><select id="editAction"><option value="photo">拍照</option><option value="video">录像</option><option value="hover">悬停</option></select></div><div><label>云台</label><input id="editGimbal" type="number"></div></div><button class="btn green" onclick="saveSelectedWaypoint()">更新航线</button><button class="btn orange" onclick="setTakeoffFromSelected()">当前航点设为起飞点</button><button class="btn gray" onclick="insertWaypointAfterSelected()">在当前航点后增加航点</button><button class="btn red" onclick="deleteSelectedWaypoint()">删除航点</button><div id="takeoffInfo" class="hint">未设置起飞点。</div></div></div>
+    <div class="section"><h3>任务统计</h3><div class="stat"><span>图斑数量</span><b id="statPoly">0</b></div><div class="stat"><span>航点数量</span><b id="statWp">0</b></div><div class="stat"><span>航线距离</span><b id="statDist">0 km</b></div><div class="stat"><span>当前模板</span><b id="statTpl">三资巡查</b></div></div>
+    <div class="section"><h3>状态</h3><div class="status" id="status">准备就绪。</div></div>
+  </aside>
+</div>
+<script>
+let map, polyLayer, routeLayer, markerLayer, noFlyLayer, noFlyTempLayer, groupPreviewLayer;
+let routePreviewDim=false; let groupPreviewOn=false; let previewGroupsData=[]; let previewGroupTitle=''; let previewColorMap=new Map(); let planMode='auto'; let manualDraw=false; let snapEnabled=true; let polygons=[]; let waypoints=[]; let selectedIndex=-1; let takeoffPoint=null; let noFlyZones=[]; let noFlyDraft=[];
+const DRONE_PROFILES={
+  mini4pro:{name:'Mini 4 Pro',type:'consumer',ns:'http://www.uav.com/wpmz/1.0.2',drone:[68,0],payload:null,shoot:'takePhoto',consumerAction:'photoGimbal',consumerTakePhoto:true,supportsActions:false,defaultHeight:60,defaultSpeed:10,note:'按 Mini4 Pro 原始样本：drone=68-0，支持 takePhoto + 云台动作'},
+  m4pro:{name:'御4 Pro',type:'consumer',ns:'http://www.uav.com/wpmz/1.0.2',drone:[68,0],payload:null,shoot:'takePhoto',consumerAction:'photoGimbal',consumerTakePhoto:true,supportsActions:false,defaultHeight:92,defaultSpeed:10,note:'按御4 Pro 原始样本：drone=68-0，支持 takePhoto + 云台动作'},
+  air3s:{name:'Air 3 / Air 3S（按Mini4Pro拍照动作）',type:'consumer',ns:'http://www.uav.com/wpmz/1.0.2',drone:[68,0],payload:null,shoot:'takePhoto',consumerAction:'photoGimbal',consumerTakePhoto:true,supportsActions:false,defaultHeight:60,defaultSpeed:10,note:'Air3/Air3S：按 Mini4 Pro 兼容方式输出 takePhoto + 云台动作'},
+  litox1:{name:'Lito X1',type:'consumer',ns:'http://www.uav.com/wpmz/1.0.2',drone:[68,0],payload:null,shoot:'takePhoto',consumerAction:'photoGimbal',consumerTakePhoto:true,supportsActions:false,defaultHeight:60,defaultSpeed:10,note:'Lito X1：按三资巡查需求写入 takePhoto + 云台动作；drone=68-0'},
+  m3e:{name:'御3E',type:'enterprise',ns:'http://www.dji.com/wpmz/1.0.6',drone:[77,0],payload:[66,0,0],lens:0,shoot:'takePhoto',supportsActions:true,supportsTerrainFollow:false,turnModes:['coordinateTurn','toPointAndPassWithContinuityCurvature','toPointAndStopWithDiscontinuityCurvature','toPointAndStopWithContinuityCurvature'],defaultHeight:80,defaultSpeed:10,note:'行业机样本：drone=77-0，payload=66-0，支持起飞安全高度/负载/航点动作'},
+  m3m:{name:'御3M',type:'enterprise',ns:'http://www.dji.com/wpmz/1.0.6',drone:[77,2],payload:[68,0,0],lens:0,shoot:'takePhoto',supportsActions:true,supportsTerrainFollow:false,turnModes:['coordinateTurn','toPointAndPassWithContinuityCurvature','toPointAndStopWithDiscontinuityCurvature','toPointAndStopWithContinuityCurvature'],defaultHeight:80,defaultSpeed:10,note:'按御3M样本适配：drone=77-2，payload=68-0，航点拍照使用 takePhoto'},
+  m3t:{name:'御3T',type:'enterprise',ns:'http://www.dji.com/wpmz/1.0.6',drone:[77,1],payload:[67,0,0],lens:0,shoot:'orientedShoot',supportsActions:true,supportsTerrainFollow:false,turnModes:['coordinateTurn','toPointAndPassWithContinuityCurvature','toPointAndStopWithDiscontinuityCurvature','toPointAndStopWithContinuityCurvature'],defaultHeight:80,defaultSpeed:10,note:'行业机样本：drone=77-1，payload=67-0，支持起飞安全高度/负载/航点动作'},
+  m4e:{name:'御4E',type:'enterprise',ns:'http://www.dji.com/wpmz/1.0.6',drone:[99,0],payload:[88,0,0],lens:1,shoot:'orientedShoot',supportsActions:true,supportsTerrainFollow:false,turnModes:['coordinateTurn','toPointAndPassWithContinuityCurvature','toPointAndStopWithDiscontinuityCurvature','toPointAndStopWithContinuityCurvature'],defaultHeight:100,defaultSpeed:10,note:'行业机样本：drone=99-0，payload=88-0，支持起飞安全高度/负载/航点动作'},
+  m4t:{name:'御4T',type:'enterprise',ns:'http://www.dji.com/wpmz/1.0.6',drone:[99,1],payload:[89,0,0],lens:0,shoot:'orientedShoot',supportsActions:true,supportsTerrainFollow:false,turnModes:['coordinateTurn','straightStop','smoothPass','curveStop','curvePass'],defaultHeight:100,defaultSpeed:10,note:'御4T按新样本适配：drone=99-1，payload=89-0，统一相对起飞点高度'},
+  m300:{name:'M300 RTK',type:'enterprise',ns:'http://www.dji.com/wpmz/1.0.6',drone:[60,0],payloadSelector:true,payload:null,lens:0,shoot:'orientedShoot',supportsActions:true,supportsTerrainFollow:false,turnModes:['coordinateTurn','straightStop','smoothPass','curveStop','curvePass'],defaultHeight:100,defaultSpeed:10,note:'M300 RTK：官方WPML机型编号 60-0；负载请在下方选择'},
+  m350:{name:'M350 RTK',type:'enterprise',ns:'http://www.dji.com/wpmz/1.0.6',drone:[89,0],payloadSelector:true,payload:null,lens:0,shoot:'orientedShoot',supportsActions:true,supportsTerrainFollow:false,turnModes:['coordinateTurn','straightStop','smoothPass','curveStop','curvePass'],defaultHeight:100,defaultSpeed:10,note:'M350 RTK：官方WPML机型编号 89-0；负载请在下方选择'},
+  m400:{name:'M400（待样本校准）',type:'enterprise',ns:'http://www.dji.com/wpmz/1.0.6',drone:null,payloadSelector:true,payload:null,lens:0,shoot:'orientedShoot',supportsActions:true,supportsTerrainFollow:false,turnModes:['coordinateTurn','straightStop','smoothPass','curveStop','curvePass'],defaultHeight:100,defaultSpeed:10,note:'M400：先提供入口和负载选择；官方公开WPML枚举未稳定确认，不写死未知机型编号，需用用户原厂样本校准'},
+  wpml:{name:'DJI WPML 通用',type:'consumer',ns:'http://www.uav.com/wpmz/1.0.2',drone:[68,0],payload:null,shoot:'gimbalOnly',consumerAction:'gimbalOnly',consumerTakePhoto:false,supportsActions:false,defaultHeight:60,defaultSpeed:10,note:'未知消费机兜底：优先保证 DJI 能读取，不强写 takePhoto'},
+  preview:{name:'通用 KML 预览',type:'preview',ns:'http://www.uav.com/wpmz/1.0.2',drone:null,payload:null,shoot:'takePhoto',supportsActions:false,defaultHeight:60,defaultSpeed:10,note:'只建议导出 KML 预览'}
+};
+const PAYLOAD_PROFILES={
+  h20t:{name:'H20T',payload:[43,0,0],lens:0,shoot:'orientedShoot',focalLength:24,note:'H20T：官方WPML负载编号 43-0，支持定向拍照/变焦类字段'},
+  p1:{name:'P1（保守模式）',payload:null,lens:0,shoot:'takePhoto',focalLength:24,note:'P1：先提供选择入口，未查到稳定公开WPML负载枚举，本版不强写payloadInfo，防止格式不支持'},
+  l1:{name:'L1（保守模式）',payload:null,lens:0,shoot:'takePhoto',focalLength:24,note:'L1：先提供选择入口，未查到稳定公开WPML负载枚举，本版不强写payloadInfo，防止格式不支持'}
+};
+function activeProfile(){
+  const base=DRONE_PROFILES[droneModel.value]||DRONE_PROFILES.wpml;
+  if(!base.payloadSelector) return base;
+  const pm=(document.getElementById('payloadModel')&&PAYLOAD_PROFILES[payloadModel.value])||PAYLOAD_PROFILES.h20t;
+  return Object.assign({},base,{name:`${base.name} + ${pm.name}`,payload:pm.payload,lens:pm.lens,shoot:pm.shoot||base.shoot,focalLength:pm.focalLength||24,payloadNote:pm.note});
+}
+const tplName={sanzi:'三资巡查',ortho:'正射测绘',oblique:'倾斜摄影'};
+function log(msg){document.getElementById('status').textContent = new Date().toLocaleTimeString()+'  '+msg+'\n'+document.getElementById('status').textContent;}
+function setPlanMode(mode){
+  planMode=mode||'auto';
+  const auto=planMode==='auto';
+  document.getElementById('tabAuto').classList.toggle('active',auto);
+  document.getElementById('tabManual').classList.toggle('active',!auto);
+  ['autoTemplateSection','sanziParams','orthoParams','obliqueParams'].forEach(id=>{const el=document.getElementById(id); if(el) el.classList.toggle('hidden',!auto || (id==='orthoParams'&&templateType.value!=='ortho') || (id==='obliqueParams'&&templateType.value!=='oblique') || (id==='sanziParams'&&templateType.value!=='sanzi'));});
+  const manual=document.getElementById('manualParams'); if(manual) manual.classList.toggle('hidden',auto);
+  if(!auto){ manualDraw=true; updateManualDrawButton(); log('已进入手动绘制模式：点击地图生成航点。'); }
+  else { manualDraw=false; updateManualDrawButton(); onTemplateChanged(); }
+}
+function updateManualDrawButton(){ const b=document.getElementById('manualDrawBtn'); if(!b) return; b.textContent=manualDraw?'停止绘制':'开始绘制'; b.classList.toggle('manual-on',manualDraw); }
+function toggleManualDraw(){ manualDraw=!manualDraw; updateManualDrawButton(); log(manualDraw?'手动绘制已开启。':'手动绘制已暂停。'); }
+function finishManualDraw(){ manualDraw=false; updateManualDrawButton(); waypoints=insertNoFlyDetours(waypoints.filter(w=>!pointInAnyNoFly([w.lat,w.lng]))); drawRoute(); updateStats(); log(`手动航点已生成：${waypoints.length} 个，可继续编辑或导出。`); }
+function toggleSnap(){ snapEnabled=!snapEnabled; const btn=event&&event.currentTarget; if(btn) btn.textContent=`航点吸附：${snapEnabled?'开':'关'}`; log(`航点吸附已${snapEnabled?'开启':'关闭'}。`); }
+function clearManualWaypoints(){ if(!confirm('确定清空当前手动航点吗？')) return; waypoints=[]; selectedIndex=-1; drawRoute(); updateStats(); log('已清空手动航点。'); }
+function addManualWaypoint(lat,lng){ const p=snapPoint(lat,lng); waypoints.push(baseWp(p.lat,p.lng,{manual:true,regionType:'手动航点'})); selectedIndex=waypoints.length-1; drawRoute(); updateStats(); selectWp(selectedIndex); log(`已添加手动航点 ${waypoints.length}${p.snapped?'（已吸附）':''}`); }
+function snapPoint(lat,lng){ if(!snapEnabled) return {lat,lng,snapped:false}; const cand=[]; waypoints.forEach(w=>cand.push({lat:w.lat,lng:w.lng})); let best=null,bd=Infinity; cand.forEach(c=>{const d=dist([lat,lng],[c.lat,c.lng]); if(d<bd){bd=d;best=c;}}); if(best && bd<=8) return {lat:best.lat,lng:best.lng,snapped:true}; return {lat,lng,snapped:false}; }
+function initMap(){
+  map=L.map('map',{zoomControl:true,preferCanvas:true,doubleClickZoom:false}).setView([35.3,113.9],13);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,attribution:'ESRI World Imagery'}).addTo(map);
+  polyLayer=L.layerGroup().addTo(map); noFlyLayer=L.layerGroup().addTo(map); noFlyTempLayer=L.layerGroup().addTo(map); groupPreviewLayer=L.layerGroup().addTo(map); routeLayer=L.layerGroup().addTo(map); markerLayer=L.layerGroup().addTo(map);
+  map.on('click',e=>{
+    if(window.__drawNoFly){ L.DomEvent.stop(e); addNoFlyVertex(e.latlng.lat,e.latlng.lng); return; }
+    if(manualDraw){ L.DomEvent.stop(e); addManualWaypoint(e.latlng.lat,e.latlng.lng); return; }
+  });
+  map.on('dblclick',e=>{
+    if(window.__drawNoFly){ L.DomEvent.stop(e); finishNoFlyDraw(); }
+  });
+  // 兼容部分 Windows/WebView/Leaflet 环境：双击可能没有正常冒泡到 map，直接监听地图容器兜底。
+  const box=map.getContainer();
+  box.addEventListener('dblclick',ev=>{
+    if(window.__drawNoFly){ ev.preventDefault(); ev.stopPropagation(); finishNoFlyDraw(); }
+  }, true);
+}
+function onExportModeChanged(){
+  const mode=(document.getElementById('exportMode')&&exportMode.value)||'sortie';
+  const wrap=document.getElementById('splitCountWrap');
+  if(wrap) wrap.classList.toggle('hidden', mode!=='split');
+  if(groupPreviewLayer) groupPreviewLayer.clearLayers();
+  resetGroupPreview(); drawRoute();
+}
+function onRouteOrderChanged(){
+  const mode=(document.getElementById('routeOrder')&&routeOrder.value)||'sortie';
+  const wrap=document.getElementById('aircraftCountWrap');
+  if(wrap) wrap.classList.toggle('hidden', mode!=='aircraft');
+  if(mode==='aircraft' && document.getElementById('exportMode')) exportMode.value='sortie';
+  onExportModeChanged();
+}
+
+function onDroneChanged(){
+  const base=DRONE_PROFILES[droneModel.value]||DRONE_PROFILES.wpml;
+  const payloadWrap=document.getElementById('payloadWrap');
+  if(payloadWrap) payloadWrap.classList.toggle('hidden', !base.payloadSelector);
+  const p=activeProfile();
+  height.value=p.defaultHeight; speed.value=p.defaultSpeed;
+  if(document.getElementById('takeoffHeight')) takeoffHeight.value=Math.max(20, Number(p.defaultHeight)||80);
+  const isEnterprise=p.type==='enterprise';
+  document.getElementById('takeoffHeightWrap').classList.toggle('hidden',!isEnterprise);
+  document.getElementById('enterpriseTurnWrap').classList.toggle('hidden',!isEnterprise);
+  document.getElementById('actionWrap').classList.toggle('hidden',!p.supportsActions);
+  document.getElementById('consumerActionTip').classList.toggle('hidden',p.supportsActions);
+  if(!p.supportsActions && document.getElementById('pointAction')) pointAction.value='photo';
+  const droneTxt=p.drone?`；drone=${p.drone.join('-')}`:'；drone=暂不写入';
+  const payloadTxt=p.payload?`；payload=${p.payload[0]}-${p.payload[1]}`:'；payload=保守模式';
+  const note=p.payloadNote?`；${p.payloadNote}`:(p.note?`；${p.note}`:'');
+  droneHint.textContent=`已选择：${p.name}${droneTxt}${payloadTxt}${note}`;
+} 
+function setTakeoffFromMap(){ alert('已取消地图点选起飞点，请先点击航点，再使用“当前航点设为起飞点”。'); }
+function updateTakeoffInfo(){ if(document.getElementById('takeoffInfo')) takeoffInfo.textContent=takeoffPoint?`起飞点：${takeoffPoint.lat.toFixed(7)}, ${takeoffPoint.lng.toFixed(7)}`:'未设置起飞点。'; }
+function setTakeoffFromSelected(){ if(selectedIndex<0){alert('请先点击一个航点');return;} const w=waypoints[selectedIndex]; takeoffPoint={lat:w.lat,lng:w.lng}; updateTakeoffInfo(); drawRoute(); log(`已把航点 ${selectedIndex+1} 设为起飞点`); }
+function onTemplateChanged(){
+  if(planMode==='manual'){ return; }
+  const t=document.getElementById('templateType').value;
+  document.getElementById('sanziParams').classList.toggle('hidden',t!=='sanzi');
+  document.getElementById('orthoParams').classList.toggle('hidden',t!=='ortho');
+  document.getElementById('obliqueParams').classList.toggle('hidden',t!=='oblique');
+  // 切换自动/手动或切换模板时不再重置用户已填写的飞行参数；机型变化时才按机型默认值回填。
+  updateStats();
+}
+async function importFiles(){
+  const files=[...document.getElementById('fileInput').files]; if(!files.length){alert('请先选择 KML/KMZ 文件');return;}
+  polygons=[]; waypoints=[]; takeoffPoint=null; selectedIndex=-1;
+  polyLayer.clearLayers(); routeLayer.clearLayers(); markerLayer.clearLayers(); if(groupPreviewLayer) groupPreviewLayer.clearLayers(); resetGroupPreview();
+  let importedWp=0, importedPoly=0;
+  for(const f of files){
+    try{
+      let texts=[];
+      if(f.name.toLowerCase().endsWith('.kmz')){
+        const zip=await JSZip.loadAsync(await f.arrayBuffer());
+        const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir);
+        const wpmlName=names.find(n=>n.toLowerCase().endsWith('waylines.wpml'));
+        const tplName=names.find(n=>n.toLowerCase().endsWith('template.kml'));
+        if(wpmlName){ const text=await zip.files[wpmlName].async('text'); const wps=parseKMLWaypoints(text); if(wps.length){ waypoints.push(...wps); importedWp+=wps.length; log(`导入 ${f.name}，读取航点 ${wps.length} 个，可二次修改。`); } }
+        const kmlCandidates=names.filter(n=>n.toLowerCase().endsWith('.kml'));
+        for(const n of kmlCandidates){ texts.push(await zip.files[n].async('text')); }
+        if(!wpmlName && !texts.length) throw new Error('KMZ 内没有 KML/WPML');
+      } else {
+        texts=[await f.text()];
+      }
+      for(const text of texts){
+        const ps=parseKMLPolygons(text); if(ps.length){ polygons.push(...ps); importedPoly+=ps.length; }
+        const wps=parseKMLWaypoints(text); if(wps.length && !f.name.toLowerCase().endsWith('.kmz')){ waypoints.push(...wps); importedWp+=wps.length; }
+      }
+      if(texts.length && !f.name.toLowerCase().endsWith('.kmz')) log(`导入 ${f.name} 完成。`);
+    }catch(e){log(`导入失败 ${f.name}: ${e.message}`)}
+  }
+  drawPolygons();
+  if(waypoints.length){ setPlanMode('manual'); drawRoute(); fitToWaypoints(); log(`已导入航线航点 ${importedWp} 个，可直接编辑后导出。`); }
+  if(polygons.length){ log(`已导入图斑 ${importedPoly} 个，可自动生成航线。`); }
+  updateStats();
+}
+function parseKMLPolygons(text){
+  const xml=new DOMParser().parseFromString(text,'text/xml');
+  const result=[];
+  const parseCoords=(raw)=>String(raw||'').trim().split(/\s+/)
+    .map(s=>s.split(',').map(Number))
+    .filter(a=>a.length>=2&&!isNaN(a[0])&&!isNaN(a[1]))
+    .map(a=>[a[1],a[0]]);
+  const getChildrenByName=(el,name)=>[...el.children].filter(x=>x.localName===name || x.tagName===name);
+  const placemarks=[...xml.getElementsByTagName('Placemark')];
+  for(const pm of placemarks){
+    const polygons=[...pm.getElementsByTagName('Polygon')];
+    for(const poly of polygons){
+      // 只读取外环 outerBoundaryIs，不能把 innerBoundaryIs 洞环当成独立图斑；
+      // 旧代码读取所有 coordinates，本文件 1474 个外环 + 952 个内环 = 2426，所以会多出 952 个。
+      const outers=[...poly.getElementsByTagName('outerBoundaryIs')];
+      for(const outer of outers){
+        const ring=outer.getElementsByTagName('LinearRing')[0];
+        if(!ring) continue;
+        const c=ring.getElementsByTagName('coordinates')[0];
+        if(!c) continue;
+        const pts=parseCoords(c.textContent);
+        if(pts.length>=3) result.push(pts);
+      }
+    }
+  }
+  // 兼容极少数非标准 KML：没有 Polygon/outerBoundaryIs 时，才退回读取 coordinates。
+  if(result.length===0){
+    const coords=[...xml.getElementsByTagName('coordinates')];
+    for(const c of coords){
+      const pts=parseCoords(c.textContent);
+      if(pts.length>=3) result.push(pts);
+    }
+  }
+  return result;
+}
+
+function parseKMLWaypoints(text){
+  const xml=new DOMParser().parseFromString(text,'text/xml');
+  const placemarks=[...xml.getElementsByTagName('Placemark')];
+  const out=[];
+  const getLocal=(el,name)=>[...el.getElementsByTagName('*')].find(x=>x.localName===name);
+  const getAllLocal=(el,name)=>[...el.getElementsByTagName('*')].filter(x=>x.localName===name);
+  placemarks.forEach((pm,i)=>{
+    const point=pm.getElementsByTagName('Point')[0]; if(!point) return;
+    const c=point.getElementsByTagName('coordinates')[0]; if(!c) return;
+    const parts=String(c.textContent||'').trim().split(/\s+/)[0].split(',').map(Number);
+    if(parts.length<2 || isNaN(parts[0]) || isNaN(parts[1])) return;
+    const hasWpml=[...pm.getElementsByTagName('*')].some(x=>String(x.localName||'').startsWith('waypoint')||x.localName==='index'||x.localName==='executeHeight'||x.localName==='height'||x.localName==='actionGroup');
+    if(!hasWpml && placemarks.length>1){
+      const nm=(pm.getElementsByTagName('name')[0]?.textContent||'').trim();
+      if(!/航点|waypoint|wp|点/i.test(nm)) return;
+    }
+    const num=(name,def)=>{ const el=getLocal(pm,name); const v=el?Number(el.textContent):NaN; return Number.isFinite(v)?v:def; };
+    const actions=getAllLocal(pm,'actionActuatorFunc').map(x=>String(x.textContent||'').trim());
+    let act='photo'; if(actions.some(t=>/hover/i.test(t))) act='hover'; else if(actions.some(t=>/record/i.test(t))) act='video';
+    let zoomFocalLength=null, shootFocalLength=null;
+    const actionNodes=getAllLocal(pm,'action');
+    actionNodes.forEach(a=>{
+      const func=getLocal(a,'actionActuatorFunc')?.textContent?.trim()||'';
+      const focal=Number(getLocal(a,'focalLength')?.textContent||'');
+      if(func==='zoom' && Number.isFinite(focal)) zoomFocalLength=focal;
+      if(func==='orientedShoot' && Number.isFinite(focal)) shootFocalLength=focal;
+    });
+    const w=baseWp(parts[1],parts[0],{height:num('executeHeight',num('height',Number(height.value)||80)),speed:num('waypointSpeed',Number(speed.value)||10),gimbal:num('gimbalPitchAngle',num('waypointGimbalPitchAngle',Number(gimbal.value)||-90)),action:act,imported:true,regionType:'导入航线'});
+    if(zoomFocalLength) w.zoomFocalLength=zoomFocalLength;
+    if(shootFocalLength) w.focalLength=shootFocalLength;
+    if(actions.length) w.importedActions=actions;
+    out.push(w);
+  });
+  if(!out.length){
+    const line=xml.getElementsByTagName('LineString')[0];
+    const c=line&&line.getElementsByTagName('coordinates')[0];
+    if(c){
+      String(c.textContent||'').trim().split(/\s+/).forEach(raw=>{
+        const parts=raw.split(',').map(Number);
+        if(parts.length>=2 && !isNaN(parts[0]) && !isNaN(parts[1])) out.push(baseWp(parts[1],parts[0],{height:Number(height.value)||80,speed:Number(speed.value)||10,gimbal:Number(gimbal.value)||-90,action:'photo',imported:true,regionType:'导入航线'}));
+      });
+    }
+  }
+  return out;
+}
+
+function fitToWaypoints(){
+  if(!waypoints.length || !map) return;
+  const pts=waypoints.filter(w=>Number.isFinite(Number(w.lat))&&Number.isFinite(Number(w.lng))).map(w=>[Number(w.lat),Number(w.lng)]);
+  if(!pts.length) return;
+  if(pts.length===1) map.setView(pts[0], Math.max(map.getZoom()||16, 17));
+  else map.fitBounds(pts,{padding:[40,40],maxZoom:18});
+}
+function drawPolygons(){ polyLayer.clearLayers(); const bounds=[]; polygons.forEach((p,i)=>{ L.polygon(p,{color:'#22c55e',weight:2,fillColor:'#22c55e',fillOpacity:.18,interactive:false}).addTo(polyLayer); p.forEach(x=>bounds.push(x)); }); if(bounds.length) map.fitBounds(bounds,{padding:[30,30]}); }
+function generateMission(){ resetGroupPreview();
+  if(planMode==='manual'){ finishManualDraw(); return; }
+  const t=templateType.value; if(!polygons.length){alert('请先导入图斑');return;}
+  waypoints=[]; if(groupPreviewLayer) groupPreviewLayer.clearLayers();
+  if(t==='sanzi') generateSanzi();
+  if(t==='ortho') generateOrtho(false);
+  if(t==='oblique') generateOblique();
+  waypoints=waypoints.filter(w=>!pointInAnyNoFly([w.lat,w.lng]));
+  // 正射/倾斜航线必须保持生成的 S 型顺序，不能再按距离重新排序；消费机靠这些密集航点逐点拍照。
+  if(t==='ortho' || t==='oblique'){
+    waypoints=insertNoFlyDetours(waypoints);
+    drawRoute(); updateStats();
+    log(`已生成 ${tplName[t]} 航线，按重叠率均匀布设 ${waypoints.length} 个拍照航点（保留 S 型顺序）`);
+    return;
+  }
+  applyRoutePlan(); drawRoute(); updateStats(); log(`已生成 ${tplName[t]} 航线，航点 ${waypoints.length} 个${noFlyZones.length?'，已避开禁飞区内航点':''}`);
+}
+function baseWp(lat,lng,extra={}){return {lat,lng,height:+height.value||80,speed:+speed.value||10,gimbal:+gimbal.value||-90,hover:+hover.value||0,action:pointAction?pointAction.value:'photo',...extra};}
+function generateSanzi(){
+  const per=Math.max(1,+photosPerPlot.value||1), max=Math.max(1,+maxPhotos.value||10), thr=+areaThreshold.value||2000;
+  polygons.forEach((poly,idx)=>{
+    const area=polyAreaMeters(poly);
+    let n=per;
+    if(isLongNarrowPolygon(poly)) n=Math.min(max, Math.max(2, autoLongNarrowCount(poly,max)));
+    else if(area>thr) n=Math.min(max, Math.max(per, Math.ceil(area/thr)));
+    const pts=pointsInsidePolygonEven(poly,n);
+    pts.forEach(p=>waypoints.push(baseWp(p[0],p[1],{region:idx,regionType:isLongNarrowPolygon(poly)?'狭长图斑':'图斑'})));
+  });
+}
+function generateOrtho(isOblique=false,gim=-90,dirName='正射'){
+  const h=+height.value||120;
+  const side=+(isOblique?obSideOverlap.value:sideOverlap.value)||70;
+  const front=+(isOblique?obFrontOverlap.value:frontOverlap.value)||80;
+  // 简化相机覆盖估算：地面覆盖约 0.8*高度；根据重叠率换算航线间距和拍照点间距。
+  // 关键修复：消费机不能等距/等间隔拍照，所以必须把每个拍照位置写成独立航点。
+  const lineSpacing=Math.max(6, h*(1-side/100)*0.8);
+  const shotSpacing=Math.max(4, h*(1-front/100)*0.8);
+  polygons.forEach((poly,idx)=>{
+    const bb=bbox(poly); const stepLat=metersToLat(lineSpacing); let row=0;
+    const startLat=bb.minLat + stepLat/2;
+    for(let lat=startLat; lat<=bb.maxLat; lat+=stepLat){
+      const intersections=[];
+      for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+        const a=poly[i], b=poly[j];
+        if((a[0]>lat)!=(b[0]>lat)){
+          const lng=a[1]+(lat-a[0])*(b[1]-a[1])/(b[0]-a[0]); intersections.push(lng);
+        }
+      }
+      intersections.sort((a,b)=>a-b);
+      for(let k=0;k+1<intersections.length;k+=2){
+        let a=intersections[k], b=intersections[k+1];
+        const segLen=dist([lat,a],[lat,b]);
+        const n=Math.max(2, Math.ceil(segLen/shotSpacing)+1);
+        const pts=[];
+        for(let s=0;s<n;s++){
+          const t=n===1?0:s/(n-1);
+          pts.push({lat:lat,lng:a+(b-a)*t});
+        }
+        if(row%2===1) pts.reverse();
+        pts.forEach(pt=>waypoints.push(baseWp(pt.lat,pt.lng,{gimbal:gim,action:'photo',group:dirName,region:idx,regionType:'正射航线',grid:true,shotSpacing:shotSpacing,lineSpacing:lineSpacing})));
+        row++;
+      }
+    }
+  });
+}
+function generateOblique(){ generateOrtho(true,-90,'正射'); generateOrtho(true,-45,'东向'); generateOrtho(true,-45,'南向'); generateOrtho(true,-45,'西向'); generateOrtho(true,-45,'北向'); }
+function metersToLngAtLat(m,lat){ return m/(111320*Math.max(0.2, Math.cos((lat||0)*Math.PI/180))); }
+function polygonAxes(poly){
+  const bb=bbox(poly), center=centroid(poly), lat0=center[0];
+  const pts=poly.map(p=>({x:(p[1]-center[1])*111320*Math.cos(lat0*Math.PI/180), y:(p[0]-center[0])*111320}));
+  let best=null;
+  for(let a=0;a<180;a+=5){
+    const th=a*Math.PI/180, ux=Math.cos(th), uy=Math.sin(th), vx=-uy, vy=ux;
+    let minU=Infinity,maxU=-Infinity,minV=Infinity,maxV=-Infinity;
+    pts.forEach(p=>{const u=p.x*ux+p.y*uy, v=p.x*vx+p.y*vy; minU=Math.min(minU,u); maxU=Math.max(maxU,u); minV=Math.min(minV,v); maxV=Math.max(maxV,v);});
+    const len=maxU-minU, wid=maxV-minV, area=len*wid;
+    if(!best || area<best.area) best={angle:a,len,wid,ux,uy,vx,vy,area,center,lat0};
+  }
+  if(best && best.wid>best.len){ const old=best.len; best.len=best.wid; best.wid=old; const ux=best.ux,uy=best.uy; best.ux=best.vx; best.uy=best.vy; best.vx=-ux; best.vy=-uy; }
+  return best;
+}
+function isLongNarrowPolygon(poly){ const ax=polygonAxes(poly); return !!(ax && ax.wid>1 && ax.len/ax.wid>=4 && ax.len>=30); }
+function autoLongNarrowCount(poly,max){ const ax=polygonAxes(poly); if(!ax) return 1; const spacing=Math.max(35, Math.min(80, ax.len/4)); return Math.min(max, Math.max(2, Math.ceil(ax.len/spacing)+1)); }
+function longNarrowPoints(poly,n){
+  const ax=polygonAxes(poly), rep=representativePoint(poly); if(!ax || n<=1) return [rep];
+  const result=[], half=ax.len/2, shrink=.88;
+  const offsets=[0,-.18,.18,-.32,.32,-.45,.45];
+  for(let i=0;i<n;i++){
+    const t=-half*shrink + (n===1?0:i*(ax.len*shrink*2)/(n-1)); let found=null;
+    for(const off of offsets){
+      const x=ax.ux*t + ax.vx*ax.wid*off, y=ax.uy*t + ax.vy*ax.wid*off;
+      const lat=ax.center[0] + y/111320, lng=ax.center[1] + x/(111320*Math.cos(ax.lat0*Math.PI/180));
+      if(pointInPoly([lat,lng],poly)){ found=[lat,lng]; break; }
+    }
+    if(found && result.every(p=>dist({lat:p[0],lng:p[1]},{lat:found[0],lng:found[1]})>2)) result.push(found);
+  }
+  return result.length>=2?result:[rep];
+}
+function candidatePoints(poly,n){
+  const bb=bbox(poly), center=centroid(poly), pts=[];
+  const area=Math.max(polyAreaMeters(poly),1), spacing=Math.max(8, Math.sqrt(area/Math.max(n*5,8)));
+  const stepLat=metersToLat(spacing), stepLng=metersToLngAtLat(spacing,center[0]);
+  let row=0;
+  for(let lat=bb.minLat+stepLat/2; lat<=bb.maxLat && pts.length<n*80; lat+=stepLat){
+    for(let lng=bb.minLng+stepLng/2+(row%2?stepLng*.35:0); lng<=bb.maxLng && pts.length<n*80; lng+=stepLng){
+      if(pointInPoly([lat,lng],poly)) pts.push([lat,lng]);
+    }
+    row++;
+  }
+  return pts;
+}
+function farthestSelect(poly,cands,n){
+  const rep=representativePoint(poly); if(!cands.length) return [rep];
+  const selected=[cands.reduce((a,b)=>dist({lat:a[0],lng:a[1]},{lat:rep[0],lng:rep[1]})<dist({lat:b[0],lng:b[1]},{lat:rep[0],lng:rep[1]})?a:b)];
+  let remain=cands.filter(p=>p!==selected[0]);
+  while(remain.length && selected.length<n){
+    let bi=0,bs=-1;
+    remain.forEach((p,i)=>{ const s=Math.min(...selected.map(q=>dist({lat:p[0],lng:p[1]},{lat:q[0],lng:q[1]}))); if(s>bs){bs=s;bi=i;} });
+    selected.push(remain.splice(bi,1)[0]);
+  }
+  return selected;
+}
+function pointsInsidePolygonEven(poly,n){
+  if(n<=1) return [representativePoint(poly)];
+  if(isLongNarrowPolygon(poly)) return longNarrowPoints(poly,n);
+  return farthestSelect(poly,candidatePoints(poly,n),n);
+}
+function pointsInsidePolygon(poly,n){ return pointsInsidePolygonEven(poly,n); }
+function representativePoint(poly){ const c=centroid(poly); if(pointInPoly(c,poly)) return c; const bb=bbox(poly); for(let scale of [4,8,16,32]){ for(let r=0;r<scale;r++)for(let col=0;col<scale;col++){ const lat=bb.minLat+(r+.5)*(bb.maxLat-bb.minLat)/scale; const lng=bb.minLng+(col+.5)*(bb.maxLng-bb.minLng)/scale; if(pointInPoly([lat,lng],poly)) return [lat,lng]; } } return poly[0]; }
+function applyRoutePlan(){
+  const mode=(document.getElementById('routeOrder')&&routeOrder.value)||'sortie';
+  if(!waypoints.length){drawRoute();return;}
+  // 重新排序/重新避让前，先去掉上一次自动插入的绕飞点，避免重复叠加。
+  waypoints=waypoints.filter(w=>!w.detour);
+  waypoints=waypoints.filter(w=>!pointInAnyNoFly([w.lat,w.lng]));
+  if(mode==='shortest'){ waypoints=orderShortestDistance(waypoints); waypoints=insertNoFlyDetours(waypoints); drawRoute(); updateStats(); log('已按最短距离排序。'); return; }
+  if(mode==='region'){ optimizeRoute(); return; }
+  if(mode==='aircraft'){ waypoints=orderByAircraftCount(waypoints); waypoints=insertNoFlyDetours(waypoints); drawRoute(); updateStats(); logAircraftSummary(); return; }
+  if(mode==='sortie'){ waypoints=orderBySignalSorties(waypoints); waypoints=insertNoFlyDetours(waypoints); drawRoute(); updateStats(); logSortieSummary(); return; }
+}
+function orderNearFromTakeoff(wps){
+  const origin=takeoffPoint?{lat:takeoffPoint.lat,lng:takeoffPoint.lng}:regionCenter(wps);
+  return wps.slice().sort((a,b)=>dist(origin,a)-dist(origin,b));
+}
+function orderShortestDistance(wps){
+  if(wps.length<=2) return wps.slice();
+  const remaining=wps.slice();
+  const ordered=[];
+  let current=takeoffPoint?{lat:takeoffPoint.lat,lng:takeoffPoint.lng}:remaining[0];
+  while(remaining.length){
+    let best=0, bs=Infinity;
+    remaining.forEach((p,i)=>{ const score=routeScore(current,p); if(score<bs){bs=score;best=i;} });
+    const p=remaining.splice(best,1)[0]; ordered.push(p); current=p;
+  }
+  return twoOptOpenPath(ordered,1800);
+}
+function orderBySignalSorties(wps){
+  const radius=Math.max(300, Number(document.getElementById('signalRadius')?.value)||1400);
+  const regions=buildFlightRegions(wps); if(!regions.length) return wps;
+  const bases=[];
+  regions.forEach(r=>{
+    let best=-1, bd=Infinity;
+    bases.forEach((b,i)=>{const d=dist(r.center,b.center); if(d<bd){bd=d; best=i;}});
+    if(best>=0 && bd<radius*1.45){ bases[best].regions.push(r); bases[best].center=regionCenter(bases[best].regions.map(x=>x.center)); }
+    else bases.push({center:r.center,regions:[r]});
+  });
+  const orderedBases=orderBases(bases);
+  let ordered=[], current=takeoffPoint?{lat:takeoffPoint.lat,lng:takeoffPoint.lng}:null;
+  orderedBases.forEach((base,bi)=>{
+    const regs=orderRegionsFrom(base.regions,current||base.center);
+    regs.forEach(r=>{ const seg=orderWaypointsInsideRegion(r.points,current); seg.forEach(p=>p.sortie=bi+1); ordered=ordered.concat(seg); if(seg.length) current=seg[seg.length-1]; });
+  });
+  return ordered;
+}
+function orderByAircraftCount(wps){
+  const count=Math.max(1, Math.min(6, Number(document.getElementById('aircraftCount')?.value)||2));
+  const regions=buildFlightRegions(wps); if(!regions.length) return wps;
+  const lats=regions.map(r=>r.center.lat), lngs=regions.map(r=>r.center.lng);
+  const lonSpread=Math.max(...lngs)-Math.min(...lngs), latSpread=Math.max(...lats)-Math.min(...lats);
+  const sorted=regions.slice().sort((a,b)=> lonSpread>=latSpread ? a.center.lng-b.center.lng : b.center.lat-a.center.lat);
+  const n=Math.max(1, Math.min(count, sorted.length));
+  const chunks=[];
+  for(let i=0;i<n;i++){
+    const start=Math.floor(i*sorted.length/n), end=Math.floor((i+1)*sorted.length/n);
+    chunks.push(sorted.slice(start,end));
+  }
+  let ordered=[];
+  chunks.forEach((chunk,gi)=>{
+    let current=takeoffPoint?{lat:takeoffPoint.lat,lng:takeoffPoint.lng}:regionCenter(chunk.map(x=>x.center));
+    const regs=orderRegionsFrom(chunk,current);
+    regs.forEach(r=>{
+      const seg=orderWaypointsInsideRegion(r.points,current);
+      seg.forEach(p=>{p.sortie=gi+1; p.aircraftGroup=gi+1;});
+      ordered=ordered.concat(seg);
+      if(seg.length) current=seg[seg.length-1];
+    });
+  });
+  return ordered;
+}
+function logAircraftSummary(){
+  const groups=aircraftGroups(false);
+  const msg=groups.map((g,i)=>`第${i+1}台${g.length}点/${(routeDistance(g)/1000).toFixed(2)}km`).join('；');
+  log(`已按${groups.length}台飞机规划：${msg}。各飞机任务按连续区域切分，不穿插。`);
+}
+function orderBases(bases){
+  const remaining=bases.slice(), ordered=[]; let current=takeoffPoint?{lat:takeoffPoint.lat,lng:takeoffPoint.lng}:remaining[0]?.center;
+  while(remaining.length){ let best=0,bd=Infinity; remaining.forEach((b,i)=>{const d=dist(current,b.center); if(d<bd){bd=d;best=i;}}); const b=remaining.splice(best,1)[0]; ordered.push(b); current=b.center; }
+  return ordered;
+}
+function orderRegionsFrom(regions,start){
+  const remaining=regions.slice(), ordered=[]; let current=start;
+  while(remaining.length){ let best=0,bd=Infinity; remaining.forEach((r,i)=>{const d=dist(current,r.center); if(d<bd){bd=d;best=i;}}); const r=remaining.splice(best,1)[0]; ordered.push(r); current=r.center; }
+  return ordered;
+}
+function logSortieSummary(){
+  const groups={}; waypoints.forEach(w=>{const k=w.sortie||1; groups[k]=(groups[k]||0)+1;});
+  const msg=Object.entries(groups).map(([k,v])=>`第${k}组 ${v} 个航点`).join('；');
+  log(`已按信号距离分组排序：${msg}。建议每组切割导出一个 KMZ，到现场换起飞位置后执行。`);
+}
+
+function optimizeRoute(){
+  if(waypoints.length<3){drawRoute();return;}
+  // 区域优先飞行：先把同一图斑/同一片区的航点飞完，再切换到下一个区域。
+  // 这样会牺牲一点理论最短距离，但能显著减少跨区域长线往返，更适合无人机实际作业。
+  waypoints=waypoints.filter(w=>!pointInAnyNoFly([w.lat,w.lng]));
+  const regions=buildFlightRegions(waypoints);
+  if(!regions.length){drawRoute();return;}
+  const orderedRegions=orderRegions(regions);
+  let ordered=[];
+  let current = takeoffPoint ? {lat:takeoffPoint.lat,lng:takeoffPoint.lng} : null;
+  orderedRegions.forEach(region=>{
+    const seg=orderWaypointsInsideRegion(region.points,current);
+    ordered=ordered.concat(seg);
+    if(seg.length) current=seg[seg.length-1];
+  });
+  waypoints=insertNoFlyDetours(ordered);
+  selectedIndex=-1; drawRoute(); updateStats();
+  log(`已按区域优先重新规划：${regions.length} 个区域，先飞完当前区域再去下一区域，减少长线往返`);
+}
+
+function buildFlightRegions(wps){
+  const mapObj=new Map();
+  wps.forEach((w,i)=>{
+    const key=(w.region!==undefined && w.region!==null) ? `poly_${w.region}` : `auto_${nearestClusterKey(w,mapObj)}`;
+    if(!mapObj.has(key)) mapObj.set(key,{key,points:[],center:null});
+    mapObj.get(key).points.push(w);
+  });
+  const arr=[...mapObj.values()];
+  arr.forEach(r=>{ r.center=regionCenter(r.points); r.points=dedupeClosePoints(r.points); });
+  return arr.filter(r=>r.points.length);
+}
+
+function nearestClusterKey(w,mapObj){
+  // 手工新增航点没有 region 时，自动并入 80 米内最近区域；否则单独成区。
+  let bestKey=null, bestD=Infinity;
+  for(const [k,r] of mapObj.entries()){
+    if(!r.points.length) continue;
+    const c=regionCenter(r.points); const d=dist(w,c);
+    if(d<bestD){bestD=d;bestKey=k;}
+  }
+  if(bestKey && bestD<80) return bestKey;
+  return Math.random().toString(36).slice(2);
+}
+
+function regionCenter(points){
+  let lat=0,lng=0; points.forEach(p=>{lat+=p.lat;lng+=p.lng;});
+  return {lat:lat/points.length,lng:lng/points.length};
+}
+
+function orderRegions(regions){
+  const remaining=regions.slice();
+  const ordered=[];
+  let current=null;
+  if(takeoffPoint) current={lat:takeoffPoint.lat,lng:takeoffPoint.lng};
+  else {
+    // 无起飞点时，从西南侧区域开始，减少突然穿插。
+    remaining.sort((a,b)=>(a.center.lng-b.center.lng)||(a.center.lat-b.center.lat));
+    current=remaining[0].center;
+  }
+  while(remaining.length){
+    let best=0, bs=Infinity;
+    remaining.forEach((r,i)=>{
+      const entry=nearestPointInRegion(r.points,current);
+      let score=dist(current,entry) + (segmentCrossesAnyNoFly(current,entry)?10000000:0);
+      // 区域中心距离作为次要因素，避免刚摸到边缘又远距离穿插。
+      score += dist(current,r.center)*0.25;
+      if(score<bs){bs=score;best=i;}
+    });
+    const r=remaining.splice(best,1)[0]; ordered.push(r); current=r.center;
+  }
+  return ordered;
+}
+
+function nearestPointInRegion(points,current){
+  if(!current) return points[0];
+  let best=points[0], bd=Infinity;
+  points.forEach(p=>{const d=dist(current,p); if(d<bd){bd=d;best=p;}});
+  return best;
+}
+
+function orderWaypointsInsideRegion(points,entryFrom){
+  if(points.length<=2) return points.slice();
+  // 正射/倾斜本身已经是 S 型航线，保留原始生成顺序，只选择更近的一端进入，避免打乱行带。
+  const hasGrid=points.some(p=>p.group);
+  if(hasGrid){
+    const normal=points.slice(); const rev=points.slice().reverse();
+    if(entryFrom && dist(entryFrom,rev[0])<dist(entryFrom,normal[0])) return rev;
+    return normal;
+  }
+  let startIdx=0;
+  if(entryFrom){ let bd=Infinity; points.forEach((p,i)=>{const d=dist(entryFrom,p); if(d<bd){bd=d;startIdx=i;}}); }
+  let remaining=points.filter((_,i)=>i!==startIdx);
+  let ordered=[points[startIdx]];
+  while(remaining.length){
+    const last=ordered[ordered.length-1]; const prev=ordered.length>1?ordered[ordered.length-2]:entryFrom;
+    let best=0, bs=Infinity;
+    remaining.forEach((p,i)=>{const score=smartRouteScore(prev,last,p); if(score<bs){bs=score;best=i;}});
+    ordered.push(remaining.splice(best,1)[0]);
+  }
+  return twoOptOpenPath(ordered,1200);
+}
+
+function dedupeClosePoints(points){
+  const out=[];
+  points.forEach(p=>{ if(!out.some(q=>dist(p,q)<0.3)) out.push(p); });
+  return out;
+}
+
+function twoOptOpenPath(arr,limit){
+  let best=arr.slice(), improved=true, cnt=0;
+  while(improved && cnt<limit){
+    improved=false;
+    for(let i=1;i<best.length-2;i++){
+      for(let k=i+1;k<best.length-1;k++){
+        const d0=routeScore(best[i-1],best[i])+routeScore(best[k],best[k+1]);
+        const d1=routeScore(best[i-1],best[k])+routeScore(best[i],best[k+1]);
+        if(d1+0.01<d0){ best=[...best.slice(0,i),...best.slice(i,k+1).reverse(),...best.slice(k+1)]; improved=true; }
+        cnt++; if(cnt>=limit) return best;
+      }
+    }
+  }
+  return best;
+}
+
+function previewColors(){ return overviewRouteColors(); }
+function resetGroupPreview(){
+  groupPreviewOn=false; routePreviewDim=false; previewGroupsData=[]; previewGroupTitle=''; previewColorMap=new Map();
+  if(groupPreviewLayer) groupPreviewLayer.clearLayers();
+  const btn=document.querySelector('button[onclick="previewSelectedGroups()"]'); if(btn) btn.textContent='预览';
+}
+function buildPreviewColorMap(groups){
+  previewColorMap=new Map(); const colors=previewColors();
+  groups.forEach((g,gi)=>g.forEach(w=>previewColorMap.set(w, colors[gi%colors.length])));
+}
+function setGroupPreview(groups,title){
+  groupPreviewOn=true; routePreviewDim=false; previewGroupsData=groups; previewGroupTitle=title; buildPreviewColorMap(groups);
+  if(groupPreviewLayer) groupPreviewLayer.clearLayers();
+  const btn=document.querySelector('button[onclick="previewSelectedGroups()"]'); if(btn) btn.textContent='取消预览';
+}
+function previewColorForWaypoint(w){ return groupPreviewOn ? (previewColorMap.get(w)||'#2563eb') : '#2563eb'; }
+
+function drawRoute(){
+  routeLayer.clearLayers(); markerLayer.clearLayers();
+  if(takeoffPoint){
+    L.circleMarker([takeoffPoint.lat,takeoffPoint.lng],{radius:8,color:'#f59e0b',fillColor:'#f59e0b',fillOpacity:.9,weight:2}).addTo(routeLayer).bindTooltip('起飞点',{permanent:false});
+  }
+  if(waypoints.length){
+    if(groupPreviewOn && previewGroupsData.length){
+      const colors=previewColors();
+      previewGroupsData.forEach((g,gi)=>{
+        if(!g.length) return;
+        L.polyline(g.map(w=>[w.lat,w.lng]),{color:colors[gi%colors.length],weight:5,opacity:.95}).addTo(routeLayer);
+      });
+    }else{
+      const line=L.polyline(waypoints.map(w=>[w.lat,w.lng]),{color:'#38bdf8',weight:4,opacity:.95}).addTo(routeLayer);
+      line.on('click',(e)=>{ insertWaypointOnRoute(e.latlng.lat,e.latlng.lng); });
+      drawInsertPlusMarkers();
+    }
+  }
+  waypoints.forEach((w,i)=>{
+    const previewColor=previewColorForWaypoint(w);
+    const bgStyle=groupPreviewOn ? `background:${previewColor};opacity:1;border-color:#ffffff;box-shadow:0 0 0 3px rgba(255,255,255,.55),0 2px 10px rgba(0,0,0,.50)` : `opacity:1`;
+    const icon=L.divIcon({
+      className:'wp-number-icon',
+      html:`<div class="wp-dot ${(!groupPreviewOn && i===0)?'start':''}" style="${bgStyle}">${i+1}</div>`,
+      iconSize:[28,28], iconAnchor:[14,14]
+    });
+    const m=L.marker([w.lat,w.lng],{icon,draggable:true}).addTo(markerLayer);
+    m.on('click',()=>selectWp(i));
+    m.on('dragend',(ev)=>{ const ll=ev.target.getLatLng(); waypoints[i].lat=ll.lat; waypoints[i].lng=ll.lng; drawRoute(); updateStats(); log(`已拖动航点 ${i+1}`); });
+    m.on('contextmenu',()=>{selectedIndex=i;deleteSelectedWaypoint();});
+  });
+}
+function drawInsertPlusMarkers(){
+  if(waypoints.length<2) return;
+  for(let i=0;i<waypoints.length-1;i++){
+    const a=waypoints[i], b=waypoints[i+1];
+    const mid={lat:(a.lat+b.lat)/2,lng:(a.lng+b.lng)/2};
+    const icon=L.divIcon({className:'insert-plus-icon',html:'<div class="insert-plus">+</div>',iconSize:[20,20],iconAnchor:[10,10]});
+    let plusMarker=null;
+    const hoverLine=L.polyline([[a.lat,a.lng],[b.lat,b.lng]],{color:'#22c55e',weight:18,opacity:0,interactive:true}).addTo(routeLayer);
+    const showPlus=()=>{
+      if(plusMarker) return;
+      plusMarker=L.marker([mid.lat,mid.lng],{icon,zIndexOffset:500}).addTo(routeLayer);
+      plusMarker.on('click',(e)=>{ L.DomEvent.stopPropagation(e); insertWaypointBetween(i,mid.lat,mid.lng); });
+      plusMarker.on('mouseover',showPlus);
+      plusMarker.on('mouseout',()=>{ setTimeout(()=>{ if(plusMarker){ routeLayer.removeLayer(plusMarker); plusMarker=null; } },350); });
+      plusMarker.bindTooltip(`在航点 ${i+1} 和 ${i+2} 中间增加航点`,{direction:'top'});
+    };
+    hoverLine.on('mouseover',showPlus);
+    hoverLine.on('click',(e)=>{ L.DomEvent.stopPropagation(e); insertWaypointBetween(i,mid.lat,mid.lng); });
+  }
+}
+function insertWaypointBetween(idx,lat,lng){
+  const prev=waypoints[idx];
+  const next=waypoints[idx+1]||prev;
+  const keepRegion=(prev.region!==undefined && prev.region===next.region)?prev.region:prev.region;
+  const nw={...prev, lat, lng, height:prev.height, speed:prev.speed, gimbal:prev.gimbal, hover:prev.hover, action:prev.action, region:keepRegion, regionType:prev.regionType||'手动'};
+  waypoints.splice(idx+1,0,nw);
+  selectedIndex=idx+1; drawRoute(); selectWp(selectedIndex); updateStats();
+  log(`已在航点 ${idx+1} 和 ${idx+2} 中间插入新航点`);
+}
+function insertWaypointAfterSelected(){
+  if(selectedIndex<0){alert('请先点击一个航点');return;}
+  const a=waypoints[selectedIndex];
+  const b=waypoints[selectedIndex+1];
+  let lat,lng;
+  if(b){ lat=(a.lat+b.lat)/2; lng=(a.lng+b.lng)/2; }
+  else { lat=a.lat+metersToLat(15); lng=a.lng; }
+  insertWaypointBetween(selectedIndex,lat,lng);
+}
+function insertWaypointOnRoute(lat,lng){
+  if(waypoints.length<2) return;
+  const p={lat,lng}; let bestIdx=0, bestD=Infinity;
+  for(let i=0;i<waypoints.length-1;i++){
+    const d=pointToSegmentDistanceMeters(p,waypoints[i],waypoints[i+1]);
+    if(d<bestD){bestD=d; bestIdx=i;}
+  }
+  insertWaypointBetween(bestIdx,lat,lng);
+}
+function pointToSegmentDistanceMeters(p,a,b){
+  const lat0=p.lat*Math.PI/180; const kx=111320*Math.cos(lat0), ky=111320;
+  const px=p.lng*kx, py=p.lat*ky, ax=a.lng*kx, ay=a.lat*ky, bx=b.lng*kx, by=b.lat*ky;
+  const vx=bx-ax, vy=by-ay, wx=px-ax, wy=py-ay;
+  const c1=vx*wx+vy*wy, c2=vx*vx+vy*vy; let t=c2?c1/c2:0; t=Math.max(0,Math.min(1,t));
+  const x=ax+t*vx, y=ay+t*vy; return Math.hypot(px-x,py-y);
+}
+function selectWp(i){ selectedIndex=i; const w=waypoints[i]; const p=activeProfile(); editPanel.classList.remove('hidden'); selectedInfo.textContent=`已选择航点 ${i+1}${p.supportsActions?'':'（消费机无自定义航点动作）'}`; editIndex.value=i+1; editHeight.value=w.height; editSpeed.value=w.speed; editAction.value=w.action; editAction.disabled=!p.supportsActions; editGimbal.value=w.gimbal; updateTakeoffInfo(); document.querySelector('.right').scrollTop=0; }
+function saveSelectedWaypoint(){ if(selectedIndex<0)return; const p=activeProfile(); const w=waypoints[selectedIndex]; w.height=+editHeight.value; w.speed=+editSpeed.value; w.action=p.supportsActions?editAction.value:'photo'; w.gimbal=+editGimbal.value; drawRoute(); log(`已修改航点 ${selectedIndex+1}${p.supportsActions?'':'（消费机不写自定义航点动作）'}`); }
+function deleteSelectedWaypoint(){ if(selectedIndex<0)return; waypoints.splice(selectedIndex,1); selectedIndex=-1; editPanel.classList.add('hidden'); drawRoute(); updateStats(); }
+function updateStats(){ statPoly.textContent=polygons.length; statWp.textContent=waypoints.length; statDist.textContent=(routeDistance()/1000).toFixed(2)+' km'; statTpl.textContent=tplName[templateType.value]; }
+function routeDistance(){let s=0;for(let i=1;i<waypoints.length;i++)s+=dist(waypoints[i-1],waypoints[i]);return s;}
+function startNoFlyDraw(){ window.__drawNoFly=true; noFlyDraft=[]; resetGroupPreview(); noFlyTempLayer.clearLayers(); if(map&&map.doubleClickZoom) map.doubleClickZoom.disable(); setPolygonInteractive(false); map.getContainer().style.cursor='crosshair'; log('开始绘制禁飞区：点击添加边界点，双击确认，航线自动更新'); }
+function setPolygonInteractive(enabled){
+  if(!polyLayer) return;
+  polyLayer.eachLayer(l=>{
+    l.options.interactive=enabled;
+    if(l._path) l._path.style.pointerEvents=enabled?'auto':'none';
+  });
+}
+function addNoFlyVertex(lat,lng){
+  noFlyDraft.push([lat,lng]); renderNoFlyDraft();
+}
+function renderNoFlyDraft(){
+  noFlyTempLayer.clearLayers();
+  noFlyDraft.forEach(p=>L.marker(p,{interactive:false,icon:L.divIcon({className:'nofly-vertex-icon',html:'<div class="nofly-vertex"></div>',iconSize:[12,12],iconAnchor:[6,6]})}).addTo(noFlyTempLayer));
+  if(noFlyDraft.length>=2) L.polyline(noFlyDraft,{color:'#ef4444',weight:2,dashArray:'5,5',interactive:false}).addTo(noFlyTempLayer);
+  if(noFlyDraft.length>=3) L.polygon(noFlyDraft,{color:'#ef4444',weight:2,fillColor:'#ef4444',fillOpacity:.20,dashArray:'5,5',interactive:false}).addTo(noFlyTempLayer);
+}
+function finishNoFlyDraw(){
+  if(noFlyDraft.length<3){alert('禁飞区至少需要 3 个点');return;}
+  // 双击确认时浏览器可能连续写入两个相同点，这里自动去重。
+  const clean=[];
+  noFlyDraft.forEach(p=>{ const last=clean[clean.length-1]; if(!last || Math.abs(last[0]-p[0])>1e-10 || Math.abs(last[1]-p[1])>1e-10) clean.push(p); });
+  if(clean.length<3){alert('禁飞区至少需要 3 个有效点');return;}
+  noFlyZones.push(clean); noFlyDraft=[]; window.__drawNoFly=false; if(map&&map.doubleClickZoom) map.doubleClickZoom.disable(); setPolygonInteractive(true); map.getContainer().style.cursor=''; noFlyTempLayer.clearLayers(); drawNoFlyZones(); updateNoFlyInfo();
+  if(waypoints.length){ replanAvoidNoFly(true); log('已添加禁飞区，航线已自动更新'); }
+  else log('已添加禁飞区，生成航线时会自动避让');
+}
+function drawNoFlyZones(){
+  noFlyLayer.clearLayers();
+  noFlyZones.forEach((z,i)=>L.polygon(z,{color:'#ef4444',weight:2,fillColor:'#ef4444',fillOpacity:.25}).addTo(noFlyLayer).bindPopup(`禁飞区 ${i+1}`));
+}
+function clearNoFlyZones(){ noFlyZones=[]; noFlyDraft=[]; window.__drawNoFly=false; if(map&&map.doubleClickZoom) map.doubleClickZoom.disable(); setPolygonInteractive(true); map.getContainer().style.cursor=''; noFlyTempLayer.clearLayers(); drawNoFlyZones(); updateNoFlyInfo(); if(waypoints.length){ drawRoute(); updateStats(); } log('已清空禁飞区'); }
+function updateNoFlyInfo(){ if(document.getElementById('noflyInfo')) noflyInfo.textContent=`禁飞区：${noFlyZones.length} 个；绘制时双击确认，航线自动更新。`; }
+function replanAvoidNoFly(silent=false){
+  if(!waypoints.length){ if(!silent) alert('请先生成航线'); return; }
+  const before=waypoints.length;
+  waypoints=waypoints.filter(w=>!pointInAnyNoFly([w.lat,w.lng]));
+  applyRoutePlan(); drawRoute(); updateStats();
+  if(!silent) log(`已按 ${noFlyZones.length} 个禁飞区更新航线，过滤禁飞区内航点 ${before-waypoints.length} 个`);
+}
+
+function smartRouteScore(prev,last,cand){
+  let score=routeScore(last,cand);
+  if(prev){
+    const ang=turnAngle(prev,last,cand); // 0 直飞，180 掉头
+    score += Math.pow(ang/180,1.35)*dist(last,cand)*0.65;
+    if(ang>120) score += 120; // 尽量避免大角度回头
+  }
+  return score;
+}
+function turnAngle(a,b,c){
+  const v1=[b.lng-a.lng,b.lat-a.lat], v2=[c.lng-b.lng,c.lat-b.lat];
+  const n1=Math.hypot(v1[0],v1[1]), n2=Math.hypot(v2[0],v2[1]); if(!n1||!n2) return 0;
+  let cos=(v1[0]*v2[0]+v1[1]*v2[1])/(n1*n2); cos=Math.max(-1,Math.min(1,cos));
+  return Math.acos(cos)*180/Math.PI;
+}
+function insertNoFlyDetours(wps){
+  if(!noFlyZones.length || wps.length<2) return wps;
+  // 自动绕飞算法：逐段检测航线是否穿越禁飞区，穿越则插入禁飞区外侧缓冲绕飞点。
+  // 最多迭代 6 轮，处理“绕过 A 后又碰到 B”的情况。
+  let route=wps.filter(w=>!w.detour && !pointInAnyNoFly([w.lat,w.lng]));
+  let addedTotal=0;
+  for(let pass=0; pass<6; pass++){
+    let changed=false;
+    const out=[];
+    for(let i=0;i<route.length-1;i++){
+      const a=route[i], b=route[i+1]; out.push(a);
+      const hitInfo=findFirstNoFlyHit(a,b);
+      if(hitInfo){
+        const dps=detourPointsAroundSmart(hitInfo.poly,a,b,hitInfo.index);
+        dps.forEach((p,idx)=>out.push({...a,lat:p[0],lng:p[1],action:'hover',hover:0,detour:true,detourFor:hitInfo.index+1,regionType:'绕飞点'}));
+        addedTotal+=dps.length; changed=true;
+      }
+    }
+    out.push(route[route.length-1]);
+    route=dedupeRouteDetours(out);
+    if(!changed) break;
+  }
+  const remain=countCrossingSegments(route);
+  if(addedTotal) log(`禁飞区避让：自动增加 ${addedTotal} 个绕飞航点${remain?`，仍有 ${remain} 段需人工检查`:''}`);
+  if(remain) alert(`提示：仍有 ${remain} 段航线可能经过禁飞区，请手动拖动航点或扩大禁飞区间距。`);
+  return route;
+}
+function findFirstNoFlyHit(a,b){
+  let best=null, bestD=Infinity;
+  noFlyZones.forEach((poly,index)=>{
+    if(segmentCrossesPolygon([a.lat,a.lng],[b.lat,b.lng],poly)){
+      const c=centroid(poly); const d=dist(a,c);
+      if(d<bestD){bestD=d; best={poly,index};}
+    }
+  });
+  return best;
+}
+function detourPointsAroundSmart(poly,a,b,zoneIndex){
+  // 生成多种绕飞候选：外接框四边 + 按禁飞区顶点外扩。选择距离短且不再穿越任何禁飞区的方案。
+  const candidates=[];
+  const pads=[30,60,100,150];
+  pads.forEach(pad=>{
+    bboxDetourCandidates(poly,pad).forEach(c=>candidates.push(c));
+    vertexDetourCandidates(poly,a,b,pad).forEach(c=>candidates.push(c));
+  });
+  let best=null, bestScore=Infinity;
+  candidates.forEach(c=>{
+    const pts=c.filter(p=>!pointInAnyNoFly(p));
+    if(pts.length!==c.length) return;
+    const check=[a,...pts.map(p=>({lat:p[0],lng:p[1]})),b];
+    const crosses=pathCrossCount(check);
+    const len=detourLen(a,b,pts);
+    const turnPenalty=detourTurnPenalty(a,b,pts);
+    const score=len + crosses*10000000 + turnPenalty;
+    if(score<bestScore){bestScore=score; best=pts;}
+  });
+  if(best) return best;
+  // 兜底：绕禁飞区外接框更远一点，宁可绕远，也不直接穿禁飞区。
+  const fallback=bboxDetourCandidates(poly,220).sort((x,y)=>detourLen(a,b,x)-detourLen(a,b,y))[0] || [];
+  return fallback;
+}
+function bboxDetourCandidates(poly,padMeters){
+  const lats=poly.map(p=>p[0]), lngs=poly.map(p=>p[1]);
+  const minLat=Math.min(...lats), maxLat=Math.max(...lats), minLng=Math.min(...lngs), maxLng=Math.max(...lngs);
+  const midLat=(minLat+maxLat)/2;
+  const padLat=metersToLat(padMeters), padLng=metersToLng(padMeters,midLat);
+  const nw=[maxLat+padLat,minLng-padLng], ne=[maxLat+padLat,maxLng+padLng];
+  const sw=[minLat-padLat,minLng-padLng], se=[minLat-padLat,maxLng+padLng];
+  return [[nw,ne],[ne,se],[se,sw],[sw,nw],[nw,ne,se],[ne,se,sw],[se,sw,nw],[sw,nw,ne]];
+}
+function vertexDetourCandidates(poly,a,b,padMeters){
+  const c=centroid(poly), out=[];
+  const expanded=poly.map(p=>expandPointFromCenter(p,c,padMeters));
+  // 找到离入口/出口最近的外扩顶点，沿两种方向绕多边形边缘走。
+  let ia=0, ib=0, da=Infinity, db=Infinity;
+  expanded.forEach((p,i)=>{const da0=dist(a,p), db0=dist(b,p); if(da0<da){da=da0;ia=i;} if(db0<db){db=db0;ib=i;}});
+  out.push(pathOnRing(expanded,ia,ib,1));
+  out.push(pathOnRing(expanded,ia,ib,-1));
+  // 加入相邻顶点，防止贴边过近。
+  out.push(pathOnRing(expanded,(ia-1+expanded.length)%expanded.length,(ib+1)%expanded.length,1));
+  out.push(pathOnRing(expanded,(ia+1)%expanded.length,(ib-1+expanded.length)%expanded.length,-1));
+  return out.filter(p=>p.length);
+}
+function expandPointFromCenter(p,c,padMeters){
+  const lat0=c[0], kx=111320*Math.cos(lat0*Math.PI/180), ky=111320;
+  let x=(p[1]-c[1])*kx, y=(p[0]-c[0])*ky;
+  const n=Math.hypot(x,y)||1; x+=x/n*padMeters; y+=y/n*padMeters;
+  return [c[0]+y/ky, c[1]+x/kx];
+}
+function pathOnRing(ring,start,end,dir){
+  const pts=[]; let i=start, guard=0;
+  while(guard<ring.length+2){ pts.push(ring[i]); if(i===end) break; i=(i+dir+ring.length)%ring.length; guard++; }
+  return pts;
+}
+function pathCrossCount(route){
+  let n=0; for(let i=0;i<route.length-1;i++){ if(segmentCrossesAnyNoFly(route[i],route[i+1])) n++; } return n;
+}
+function countCrossingSegments(route){ return pathCrossCount(route); }
+function detourTurnPenalty(a,b,pts){
+  let penalty=0; const arr=[a,...pts.map(p=>({lat:p[0],lng:p[1]})),b];
+  for(let i=1;i<arr.length-1;i++){ penalty+=Math.max(0,turnAngle(arr[i-1],arr[i],arr[i+1])-120)*3; }
+  return penalty;
+}
+function dedupeRouteDetours(points){
+  const out=[]; points.forEach(p=>{ const last=out[out.length-1]; if(!last || dist(last,p)>0.5) out.push(p); }); return out;
+}
+function detourLen(a,b,pts){ let d=0; let last=a; pts.forEach(p=>{const q={lat:p[0],lng:p[1]}; d+=dist(last,q); last=q;}); d+=dist(last,b); return d; }
+function pointInAnyNoFly(pt){ return noFlyZones.some(z=>pointInPoly(pt,z)); }
+function routeScore(a,b){ return dist(a,b) + (segmentCrossesAnyNoFly(a,b)?10000000:0); }
+function segmentCrossesAnyNoFly(a,b){ return noFlyZones.some(poly=>segmentCrossesPolygon([a.lat,a.lng],[b.lat,b.lng],poly)); }
+function segmentCrossesPolygon(a,b,poly){
+  if(pointInPoly(a,poly)||pointInPoly(b,poly)) return true;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    if(segmentsIntersect(a,b,poly[j],poly[i])) return true;
+  }
+  return false;
+}
+function segmentsIntersect(a,b,c,d){
+  const o1=orient(a,b,c), o2=orient(a,b,d), o3=orient(c,d,a), o4=orient(c,d,b);
+  if(o1===0 && onSegment(a,c,b)) return true;
+  if(o2===0 && onSegment(a,d,b)) return true;
+  if(o3===0 && onSegment(c,a,d)) return true;
+  if(o4===0 && onSegment(c,b,d)) return true;
+  return (o1>0)!=(o2>0) && (o3>0)!=(o4>0);
+}
+function orient(a,b,c){ const v=(b[1]-a[1])*(c[0]-b[0])-(b[0]-a[0])*(c[1]-b[1]); return Math.abs(v)<1e-12?0:(v>0?1:-1); }
+function onSegment(a,b,c){ return b[1]<=Math.max(a[1],c[1])+1e-12 && b[1]>=Math.min(a[1],c[1])-1e-12 && b[0]<=Math.max(a[0],c[0])+1e-12 && b[0]>=Math.min(a[0],c[0])-1e-12; }
+function exportKML(){ if(!waypoints.length){alert('没有航点');return;} download('航线预览.kml', buildKML(waypoints),'application/vnd.google-earth.kml+xml'); }
+async function exportKMZ(){ if(!waypoints.length){alert('没有航点');return;} await saveWpmlKmz(waypoints,'航线任务.kmz'); }
+function splitGroups(){ const n=+splitCount.value||500; const groups=[]; for(let i=0;i<waypoints.length;i+=n) groups.push(waypoints.slice(i,i+n)); return groups; }
+function sortieGroups(refresh=true){ if(refresh){ waypoints=orderBySignalSorties(waypoints); drawRoute(); updateStats(); } const obj={}; waypoints.forEach(w=>{const k=w.sortie||1; (obj[k]=obj[k]||[]).push(w);}); return Object.keys(obj).sort((a,b)=>Number(a)-Number(b)).map(k=>obj[k]); }
+function aircraftGroups(refresh=true){ if(refresh){ waypoints=orderByAircraftCount(waypoints); drawRoute(); updateStats(); } const obj={}; waypoints.forEach(w=>{const k=w.aircraftGroup||w.sortie||1; (obj[k]=obj[k]||[]).push(w);}); return Object.keys(obj).sort((a,b)=>Number(a)-Number(b)).map(k=>obj[k]); }
+function routeTaskGroups(){
+  const mode=(document.getElementById('routeOrder')&&routeOrder.value)||'sortie';
+  if(mode==='aircraft') return {groups:aircraftGroups(), title:`按${Math.max(1,Number(document.getElementById('aircraftCount')?.value)||2)}台飞机分组`, prefix:'飞机任务'};
+  return {groups:sortieGroups(), title:'航线任务分组', prefix:'航线任务'};
+}
+function previewSplitGroups(){ if(!waypoints.length){alert('没有航点');return;} renderGroupPreview(splitGroups(),'切割分组'); }
+function previewSortieGroups(){ if(!waypoints.length){alert('没有航点');return;} const r=routeTaskGroups(); renderGroupPreview(r.groups,r.title); }
+async function exportSplitKMZ(){ if(!waypoints.length){alert('没有航点');return;} const groups=splitGroups(); renderGroupPreview(groups,'切割分组'); for(let i=0;i<groups.length;i++){ await saveWpmlKmz(groups[i],`航线_${String(i+1).padStart(2,'0')}.kmz`); } log(`已切割导出 ${groups.length} 个 KMZ，并已在地图预览分组。`); }
+async function exportSortieKMZ(){ if(!waypoints.length){alert('没有航点');return;} const r=routeTaskGroups(); renderGroupPreview(r.groups,r.title); for(let i=0;i<r.groups.length;i++){ await saveWpmlKmz(r.groups[i],`${r.prefix}_${String(i+1).padStart(2,'0')}.kmz`); } log(`已按${r.title}导出 ${r.groups.length} 个 KMZ，并已在地图预览分组。`); }
+
+function getSelectedGroups(){
+  if(planMode==='manual') return {groups:splitGroups(), title:'手动航点按数量切割', prefix:'手动航线'};
+  const mode=(document.getElementById('exportMode')&&exportMode.value)||'sortie';
+  return mode==='split' ? {groups:splitGroups(), title:'切割分组', prefix:'航线'} : routeTaskGroups();
+}
+function previewSelectedGroups(){
+  if(!waypoints.length){alert('没有航点');return;}
+  if(groupPreviewOn){ resetGroupPreview(); drawRoute(); log('已取消分组预览。'); return; }
+  const r=getSelectedGroups(); renderGroupPreview(r.groups,r.title);
+}
+async function exportSelectedKMZ(){
+  if(!waypoints.length){alert('没有航点');return;}
+  const r=getSelectedGroups(); renderGroupPreview(r.groups,r.title);
+  const pack=new JSZip();
+  for(let i=0;i<r.groups.length;i++){
+    const kmzBlob=await buildWpmlKmzBlob(r.groups[i], i+1);
+    pack.file(`${r.prefix}_${String(i+1).padStart(2,'0')}.kmz`, kmzBlob);
+  }
+  pack.file('航线任务图.kml', buildTaskMapKML(r.groups));
+  const overviewPng=await buildHighResOverviewPng(r.groups,r.title);
+  if(overviewPng) pack.file('高清航线总览图.png', overviewPng);
+  pack.file('任务说明.txt', buildTaskSummary(r.groups,r.title));
+  const blob=await pack.generateAsync({type:'blob',compression:'DEFLATE'});
+  saveBlob(blob,'航线任务包.zip');
+  log(`已按${r.title}打包输出 ${r.groups.length} 个 KMZ + 航线任务图KML + 高清航线图，避免浏览器只下载第一个文件。`);
+}
+function renderGroupPreview(groups,title){
+  setGroupPreview(groups,title);
+  drawRoute();
+  // 只保留轻量分组编号，不再叠加透明航线；同一任务的航点和路线直接使用同一种颜色。
+  if(groupPreviewLayer){
+    groupPreviewLayer.clearLayers();
+    groups.forEach((g,i)=>{ if(!g.length) return; const c=regionCenter(g); L.marker([c.lat,c.lng],{icon:L.divIcon({className:'group-label-icon',html:`<div class="group-label">${i+1}</div>`,iconSize:[30,22],iconAnchor:[15,11]})}).addTo(groupPreviewLayer).bindTooltip(`${title} ${i+1}：${g.length} 个航点`); });
+  }
+  log(`${title}预览完成：${groups.length} 组。同一任务航点已显示为同一种颜色；再次点击“取消预览”恢复。`);
+}
+async function buildWpmlKmzBlob(wps,taskNo=1){ const zip=new JSZip(); zip.file('wpmz/template.kml', buildTemplateKml(wps)); zip.file('wpmz/waylines.wpml', buildWaylinesWpml(wps)); zip.file('xky_project.json', JSON.stringify(buildXkyProject(wps,taskNo),null,2)); return await zip.generateAsync({type:'blob',compression:'DEFLATE'}); }
+async function saveWpmlKmz(wps,name,taskNo=1){ const blob=await buildWpmlKmzBlob(wps,taskNo); saveBlob(blob,name); log(`已导出 ${name}（机型：${activeProfile().name}）`); }
+function buildXkyProject(wps,taskNo){
+  return {app:'航线规划器',taskNo,droneModel:droneModel.value,payloadModel:(document.getElementById('payloadModel')?payloadModel.value:''),aircraftCount:(document.getElementById('aircraftCount')?Number(aircraftCount.value)||1:1),templateType:templateType.value,exportTime:new Date().toISOString(),waypoints:wps.map((w,i)=>({index:i+1,lat:w.lat,lng:w.lng,height:w.height,speed:w.speed,gimbal:w.gimbal,action:w.action,hover:w.hover,region:w.region,aircraftGroup:w.aircraftGroup||null,manual:!!w.manual,imported:!!w.imported}))};
+}
+
+function canvasText(ctx,text,x,y,maxWidth){
+  if(ctx.measureText(text).width<=maxWidth){ ctx.fillText(text,x,y); return; }
+  let s=String(text||'');
+  while(s.length>4 && ctx.measureText(s+'…').width>maxWidth) s=s.slice(0,-1);
+  ctx.fillText(s+'…',x,y);
+}
+function overviewRouteColors(){ return ['#2563eb','#f97316','#7c3aed','#dc2626','#0891b2','#db2777','#0f766e','#a855f7','#b45309','#1d4ed8']; }
+function tileX(lng,z){ return Math.floor((lng+180)/360*Math.pow(2,z)); }
+function tileY(lat,z){ const r=lat*Math.PI/180; return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z)); }
+function tileLng(x,z){ return x/Math.pow(2,z)*360-180; }
+function tileLat(y,z){ const n=Math.PI-2*Math.PI*y/Math.pow(2,z); return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n))); }
+function loadTileImage(url,timeout=1200){
+  return new Promise(resolve=>{
+    const img=new Image(); let done=false;
+    const finish=v=>{ if(!done){done=true; resolve(v);} };
+    img.crossOrigin='anonymous'; img.onload=()=>finish(img); img.onerror=()=>finish(null);
+    setTimeout(()=>finish(null),timeout); img.src=url;
+  });
+}
+async function drawImageryBasemap(ctx,minLat,minLng,maxLat,maxLng,cv,pad,top,right,bottom){
+  try{
+    let z=18, x1,y1,x2,y2;
+    for(; z>=12; z--){
+      x1=tileX(minLng,z); x2=tileX(maxLng,z); y1=tileY(maxLat,z); y2=tileY(minLat,z);
+      if((x2-x1+1)*(y2-y1+1)<=80) break;
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(pad,top,right-pad,bottom-top); ctx.clip();
+    for(let x=x1;x<=x2;x++) for(let y=y1;y<=y2;y++){
+      const img=await loadTileImage(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`);
+      if(!img) continue;
+      const lonA=tileLng(x,z), lonB=tileLng(x+1,z), latA=tileLat(y,z), latB=tileLat(y+1,z);
+      const a=cv(latA,lonA), b=cv(latB,lonB);
+      const dx=Math.min(a[0],b[0]), dy=Math.min(a[1],b[1]), dw=Math.abs(b[0]-a[0]), dh=Math.abs(b[1]-a[1]);
+      ctx.drawImage(img,dx,dy,dw,dh);
+    }
+    ctx.globalAlpha=.22; ctx.fillStyle='#ffffff'; ctx.fillRect(pad,top,right-pad,bottom-top); ctx.globalAlpha=1;
+    ctx.restore(); return true;
+  }catch(e){ console.warn('影像底图加载失败',e); return false; }
+}
+async function buildHighResOverviewPng(groups,title){
+  try{
+    const canvas=document.createElement('canvas'); const W=5000,H=5000,header=330,pad=260;
+    canvas.width=W; canvas.height=H;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#12324a'; ctx.fillRect(0,0,W,header);
+    ctx.fillStyle='#ffffff'; ctx.font='bold 92px Microsoft YaHei, Arial'; ctx.fillText('航线规划器 · 高清航线总览图',pad,115);
+    const all=groups.flat(); if(!all.length) return null;
+    ctx.fillStyle='#dceeff'; ctx.font='44px Microsoft YaHei, Arial';
+    canvasText(ctx,`分组：${title}    航点：${all.length}    机型：${activeProfile().name}    导出：${new Date().toLocaleString()}`,pad,220,W-pad*2);
+    const coords=[];
+    all.forEach(w=>coords.push([Number(w.lat),Number(w.lng)]));
+    polygons.forEach(poly=>poly.forEach(p=>coords.push([p[0],p[1]])));
+    let minLat=Math.min(...coords.map(p=>p[0])), maxLat=Math.max(...coords.map(p=>p[0])), minLng=Math.min(...coords.map(p=>p[1])), maxLng=Math.max(...coords.map(p=>p[1]));
+    if(maxLat-minLat<1e-9){maxLat+=1e-6;minLat-=1e-6;} if(maxLng-minLng<1e-9){maxLng+=1e-6;minLng-=1e-6;}
+    const sx=(W-pad*2)/(maxLng-minLng), sy=(H-header-pad*2)/(maxLat-minLat), sc=Math.min(sx,sy);
+    const ox=pad+(W-pad*2-(maxLng-minLng)*sc)/2, oy=header+pad+(H-header-pad*2-(maxLat-minLat)*sc)/2;
+    const cv=(lat,lng)=>[ox+(lng-minLng)*sc, oy+(maxLat-lat)*sc];
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    await drawImageryBasemap(ctx,minLat,minLng,maxLat,maxLng,cv,pad,header+pad,W-pad,H-pad);
+    // 图斑边界
+    polygons.forEach(poly=>{
+      if(!poly.length) return;
+      ctx.beginPath(); poly.forEach((p,i)=>{const [x,y]=cv(p[0],p[1]); if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);}); ctx.closePath();
+      ctx.fillStyle='rgba(250,204,21,.16)'; ctx.fill(); ctx.strokeStyle='#facc15'; ctx.lineWidth=5; ctx.stroke();
+    });
+    const colors=overviewRouteColors();
+    groups.forEach((g,gi)=>{
+      const color=colors[gi%colors.length];
+      if(g.length>=2){ ctx.beginPath(); g.forEach((w,i)=>{const [x,y]=cv(Number(w.lat),Number(w.lng)); if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);}); ctx.strokeStyle=color; ctx.lineWidth=8; ctx.stroke(); }
+      const r=all.length>800?7:11;
+      g.forEach((w,i)=>{const [x,y]=cv(Number(w.lat),Number(w.lng)); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill(); ctx.strokeStyle=color; ctx.lineWidth=4; ctx.stroke(); if(all.length<=260 || i===0 || i===g.length-1 || i%10===0){ctx.fillStyle='#1e293b'; ctx.font='30px Arial'; ctx.fillText(String(i+1),x+r+4,y-r-2);} });
+      if(g.length){ const c=regionCenter(g); const [x,y]=cv(c.lat,c.lng); ctx.beginPath(); ctx.arc(x,y,34,0,Math.PI*2); ctx.fillStyle=color; ctx.fill(); ctx.lineWidth=5; ctx.strokeStyle='#fff'; ctx.stroke(); ctx.fillStyle='#fff'; ctx.font='bold 46px Arial'; ctx.fillText(String(gi+1),x-14,y+16); }
+    });
+    if(all.length){ const [sx0,sy0]=cv(all[0].lat,all[0].lng), [ex0,ey0]=cv(all[all.length-1].lat,all[all.length-1].lng); ctx.fillStyle='#16a34a'; ctx.fillRect(sx0-34,sy0-34,68,68); ctx.fillStyle='#fff'; ctx.font='bold 42px Microsoft YaHei'; ctx.fillText('起',sx0-22,sy0+16); ctx.fillStyle='#dc2626'; ctx.fillRect(ex0-34,ey0-34,68,68); ctx.fillStyle='#fff'; ctx.fillText('终',ex0-22,ey0+16); }
+    ctx.fillStyle='#64748b'; ctx.font='34px Microsoft YaHei, Arial'; ctx.fillText('说明：本图用于打印和归档，实际飞行请以 DJI Fly / Pilot 导入检查结果为准。',pad,H-90);
+    return await new Promise(resolve=>canvas.toBlob(resolve,'image/png',1));
+  }catch(e){ console.warn(e); return null; }
+}
+
+function buildTaskSummary(groups,title){
+  const lines=[]; lines.push('航线任务导出说明'); lines.push(`分组方式：${title}`); lines.push(`机型：${activeProfile().name}`); lines.push(`模式：${planMode==='manual'?'手动绘制':'自动生成'}`); lines.push(`导出时间：${new Date().toLocaleString()}`); lines.push('');
+  groups.forEach((g,i)=>{ const d=routeDistance(g)/1000; lines.push(`任务${i+1}：${g.length}个航点，约${d.toFixed(2)}km`); });
+  return lines.join('\n');
+}
+function kmlColor(hex){ const h=String(hex||'#2563eb').replace('#',''); if(h.length!==6) return 'ffeb6325'; return 'ff'+h.slice(4,6)+h.slice(2,4)+h.slice(0,2); }
+function buildTaskMapKML(groups){
+  const colors=previewColors();
+  let styles='', body='';
+  groups.forEach((g,gi)=>{
+    if(!g || g.length<2) return;
+    const sid=`task${gi+1}`;
+    const color=kmlColor(colors[gi%colors.length]);
+    styles+=`<Style id="${sid}"><LineStyle><color>${color}</color><width>5</width></LineStyle></Style>`;
+    const coords=g.map(w=>`${Number(w.lng).toFixed(10)},${Number(w.lat).toFixed(10)},${Number(w.height)||0}`).join(' ');
+    body+=`<Placemark><name>任务${gi+1}_${g.length}航点_航线</name><styleUrl>#${sid}</styleUrl><description><![CDATA[切割任务:${gi+1}<br>航点数量:${g.length}<br>说明:本KML仅用于手机查看任务线，不包含航点。]]></description><LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString></Placemark>`;
+  });
+  return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>航线任务预览图_全部切割任务线</name>${styles}${body}</Document></kml>`;
+}
+
+function terrainFollowWaylineXml(){ return ''; }
+function missionConfig(){
+  const p=activeProfile();
+  const takeoff=p.type==='enterprise'?`<wpml:takeOffSecurityHeight>${Number(takeoffHeight.value)||p.defaultHeight||80}</wpml:takeOffSecurityHeight>`:'';
+  const drone=p.drone?`<wpml:droneInfo><wpml:droneEnumValue>${p.drone[0]}</wpml:droneEnumValue><wpml:droneSubEnumValue>${p.drone[1]}</wpml:droneSubEnumValue></wpml:droneInfo>`:'';
+  const payload=p.payload?`<wpml:waylineAvoidLimitAreaMode>0</wpml:waylineAvoidLimitAreaMode><wpml:payloadInfo><wpml:payloadEnumValue>${p.payload[0]}</wpml:payloadEnumValue><wpml:payloadSubEnumValue>${p.payload[1]}</wpml:payloadSubEnumValue><wpml:payloadPositionIndex>${p.payload[2]}</wpml:payloadPositionIndex></wpml:payloadInfo>`:'';
+  return `<wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction>${takeoff}<wpml:globalTransitionalSpeed>${Number(speed.value)||p.defaultSpeed||10}</wpml:globalTransitionalSpeed>${drone}${payload}</wpml:missionConfig>`;
+}
+function consumerWpmlPlacemark(w,i){
+  const p=activeProfile();
+  const mode=p.consumerAction||'photoGimbal';
+  const gimbalFunc=i===0?'gimbalRotate':'gimbalEvenlyRotate';
+  const gimbalParam=`<wpml:actionActuatorFuncParam>
+              <wpml:gimbalHeadingYawBase>aircraft</wpml:gimbalHeadingYawBase>
+              <wpml:gimbalRotateMode>absoluteAngle</wpml:gimbalRotateMode>
+              <wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable>
+              <wpml:gimbalPitchRotateAngle>${Number(w.gimbal)||0}</wpml:gimbalPitchRotateAngle>
+              <wpml:gimbalRollRotateEnable>1</wpml:gimbalRollRotateEnable>
+              <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
+              <wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable>
+              <wpml:gimbalYawRotateAngle>0</wpml:gimbalYawRotateAngle>
+              <wpml:gimbalRotateTimeEnable>0</wpml:gimbalRotateTimeEnable>
+              <wpml:gimbalRotateTime>0</wpml:gimbalRotateTime>
+              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+            </wpml:actionActuatorFuncParam>`;
+  // 消费机三资巡查必须写入到点拍照。Mini4 Pro / 御4 Pro / Air3 / Air3S / Lito X1 均按 takePhoto + 云台动作导出，Air3系列使用Mini4 Pro兼容写法。
+  const hasPhoto=!!p.consumerTakePhoto;
+  const photoAction=hasPhoto?`<wpml:action>
+            <wpml:actionId>1</wpml:actionId>
+            <wpml:actionActuatorFunc>takePhoto</wpml:actionActuatorFunc>
+            <wpml:actionActuatorFuncParam>
+              <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+              <wpml:useGlobalPayloadLensIndex>0</wpml:useGlobalPayloadLensIndex>
+            </wpml:actionActuatorFuncParam>
+          </wpml:action>`:'';
+  return `<Placemark>
+        <Point>
+          <coordinates>
+            ${Number(w.lng).toFixed(12)},${Number(w.lat).toFixed(12)}
+          </coordinates>
+        </Point>
+        <wpml:index>${i}</wpml:index>
+        <wpml:executeHeight>${Number(w.height)||60}</wpml:executeHeight>
+        <wpml:waypointSpeed>${Number(w.speed)||10}</wpml:waypointSpeed>
+        <wpml:waypointHeadingParam>
+          <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>
+          <wpml:waypointHeadingAngle>0</wpml:waypointHeadingAngle>
+          <wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint>
+          <wpml:waypointHeadingAngleEnable>1</wpml:waypointHeadingAngleEnable>
+          <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>
+          <wpml:waypointHeadingPoiIndex>0</wpml:waypointHeadingPoiIndex>
+        </wpml:waypointHeadingParam>
+        <wpml:waypointTurnParam>
+          <wpml:waypointTurnMode>${i===0?'toPointAndStopWithContinuityCurvature':'toPointAndPassWithContinuityCurvature'}</wpml:waypointTurnMode>
+          <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>
+        </wpml:waypointTurnParam>
+        <wpml:useStraightLine>0</wpml:useStraightLine>
+        ${!hasPhoto?`<wpml:waypointGimbalHeadingParam>
+          <wpml:waypointGimbalPitchAngle>${Number(w.gimbal)||0}</wpml:waypointGimbalPitchAngle>
+          <wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle>
+        </wpml:waypointGimbalHeadingParam>`:''}
+        <wpml:actionGroup>
+          <wpml:actionGroupId>${i+1}</wpml:actionGroupId>
+          <wpml:actionGroupStartIndex>${i}</wpml:actionGroupStartIndex>
+          <wpml:actionGroupEndIndex>${i}</wpml:actionGroupEndIndex>
+          <wpml:actionGroupMode>parallel</wpml:actionGroupMode>
+          <wpml:actionTrigger>
+            <wpml:actionTriggerType>reachPoint</wpml:actionTriggerType>
+          </wpml:actionTrigger>
+          ${photoAction}
+          <wpml:action>
+            <wpml:actionId>${hasPhoto?2:1}</wpml:actionId>
+            <wpml:actionActuatorFunc>${gimbalFunc}</wpml:actionActuatorFunc>
+            ${gimbalParam}
+          </wpml:action>
+        </wpml:actionGroup>
+      </Placemark>`;
+}
+function enterpriseTurnChoice(){ const el=document.getElementById('enterpriseTurnMode'); return el?el.value:'straightStop'; }
+function enterpriseTurnModeValue(){
+  const c=enterpriseTurnChoice();
+  if(c==='coordinateTurn') return 'coordinateTurn';
+  if(c==='straightStop') return 'toPointAndStopWithDiscontinuityCurvature';
+  if(c==='smoothPass') return 'toPointAndPassWithContinuityCurvature';
+  if(c==='curveStop') return 'toPointAndStopWithContinuityCurvature';
+  if(c==='curvePass') return 'toPointAndPassWithContinuityCurvature';
+  return 'toPointAndStopWithDiscontinuityCurvature';
+}
+function autoTurnDampingForIndex(i){
+  const c=enterpriseTurnChoice();
+  if(c==='straightStop' || c==='curveStop') return 0;
+  const prev=waypoints[i-1], cur=waypoints[i], next=waypoints[i+1];
+  const d1=prev&&cur?dist(prev,cur):999, d2=cur&&next?dist(cur,next):999;
+  const d=Math.min(d1,d2);
+  if(!Number.isFinite(d) || d<20) return 0;
+  if(d<50) return 3;
+  if(d<100) return 5;
+  return 8;
+}
+function enterpriseTurnDampingDistValue(i=0){ return 0; }
+function enterpriseUseStraightLineValue(){
+  // 行业机统一不写直线强制通过，配合 0 截距，避免“航点转弯截距异常(1550)”。
+  return 0;
+}
+function enterpriseGimbalActionParam(w,p){
+  const pos=p.payload?p.payload[2]:0;
+  return `<wpml:actionActuatorFuncParam>
+    <wpml:gimbalRotateMode>absoluteAngle</wpml:gimbalRotateMode>
+    <wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable>
+    <wpml:gimbalPitchRotateAngle>${Number(w.gimbal)||-90}</wpml:gimbalPitchRotateAngle>
+    <wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable>
+    <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
+    <wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable>
+    <wpml:gimbalYawRotateAngle>0</wpml:gimbalYawRotateAngle>
+    <wpml:gimbalRotateTimeEnable>0</wpml:gimbalRotateTimeEnable>
+    <wpml:gimbalRotateTime>0</wpml:gimbalRotateTime>
+    <wpml:payloadPositionIndex>${pos}</wpml:payloadPositionIndex>
+  </wpml:actionActuatorFuncParam>`;
+}
+function enterpriseShootActionParam(w,p,act,i){
+  const pos=p.payload?p.payload[2]:0;
+  const lens=(p.lens!==undefined&&p.lens!==null)?p.lens:0;
+  if(act==='orientedShoot'){
+    return `<wpml:actionActuatorFuncParam>
+      <wpml:gimbalPitchRotateAngle>${Number(w.gimbal)||-90}</wpml:gimbalPitchRotateAngle>
+      <wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle>
+      <wpml:gimbalYawRotateAngle>0</wpml:gimbalYawRotateAngle>
+      <wpml:focusX>0</wpml:focusX>
+      <wpml:focusY>0</wpml:focusY>
+      <wpml:focusRegionWidth>0</wpml:focusRegionWidth>
+      <wpml:focusRegionHeight>0</wpml:focusRegionHeight>
+      <wpml:focalLength>${Number(w.focalLength)||Number(w.zoomFocalLength)||24}</wpml:focalLength>
+      <wpml:aircraftHeading>0</wpml:aircraftHeading>
+      <wpml:accurateFrameValid>0</wpml:accurateFrameValid>
+      <wpml:payloadPositionIndex>${pos}</wpml:payloadPositionIndex>
+      <wpml:useGlobalPayloadLensIndex>${p.drone&&p.drone[0]===99?1:lens}</wpml:useGlobalPayloadLensIndex>
+      ${p.drone&&p.drone[0]===99?'<wpml:payloadLensIndex>visable</wpml:payloadLensIndex>':''}
+      <wpml:orientedCameraType>${p.payload?p.payload[0]:'normal'}</wpml:orientedCameraType>
+      <wpml:orientedPhotoMode>normalPhoto</wpml:orientedPhotoMode>
+    </wpml:actionActuatorFuncParam>`;
+  }
+  if(act==='hover') return `<wpml:actionActuatorFuncParam><wpml:hoverTime>${Number(w.hover)||1}</wpml:hoverTime></wpml:actionActuatorFuncParam>`;
+  if(act==='startRecord') return `<wpml:actionActuatorFuncParam><wpml:payloadPositionIndex>${pos}</wpml:payloadPositionIndex><wpml:useGlobalPayloadLensIndex>${lens}</wpml:useGlobalPayloadLensIndex></wpml:actionActuatorFuncParam>`;
+  return `<wpml:actionActuatorFuncParam>
+    <wpml:fileSuffix>航点${i+1}</wpml:fileSuffix>
+    <wpml:payloadPositionIndex>${pos}</wpml:payloadPositionIndex>
+    <wpml:useGlobalPayloadLensIndex>${lens}</wpml:useGlobalPayloadLensIndex>
+  </wpml:actionActuatorFuncParam>`;
+}
+function enterpriseZoomActionXml(w,p,actionId){
+  const pos=p.payload?p.payload[2]:0;
+  const focal=Number(w.zoomFocalLength)||Number(w.focalLength)||0;
+  if(!focal) return '';
+  return `<wpml:action>
+      <wpml:actionId>${actionId}</wpml:actionId>
+      <wpml:actionActuatorFunc>zoom</wpml:actionActuatorFunc>
+      <wpml:actionActuatorFuncParam>
+        <wpml:focalLength>${focal}</wpml:focalLength>
+        <wpml:isUseFocalFactor>0</wpml:isUseFocalFactor>
+        <wpml:payloadPositionIndex>${pos}</wpml:payloadPositionIndex>
+      </wpml:actionActuatorFuncParam>
+    </wpml:action>`;
+}
+function enterpriseWpmlPlacemark(w,i){
+  const p=activeProfile();
+  const act=w.action==='hover'?'hover':(w.action==='video'?'startRecord':p.shoot);
+  let actionList='', aid=0;
+  const zoomXml=enterpriseZoomActionXml(w,p,aid);
+  if(zoomXml){ actionList+=zoomXml; aid++; }
+  // 御4E/御4T 原厂样本动作里 orientedShoot 已包含云台角度，避免额外 gimbalRotate 造成格式不兼容。
+  const m4Enterprise = p.drone && p.drone[0]===99;
+  if(!m4Enterprise && act!=='hover' && act!=='startRecord'){
+    actionList+=`<wpml:action>
+      <wpml:actionId>${aid++}</wpml:actionId>
+      <wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc>
+      ${enterpriseGimbalActionParam(w,p)}
+    </wpml:action>`;
+  }
+  actionList+=`<wpml:action>
+      <wpml:actionId>${aid++}</wpml:actionId>
+      <wpml:actionActuatorFunc>${act}</wpml:actionActuatorFunc>
+      ${enterpriseShootActionParam(w,p,act,i)}
+    </wpml:action>`;
+  const actionXml=`<wpml:actionGroup>
+    <wpml:actionGroupId>${i}</wpml:actionGroupId>
+    <wpml:actionGroupStartIndex>${i}</wpml:actionGroupStartIndex>
+    <wpml:actionGroupEndIndex>${i}</wpml:actionGroupEndIndex>
+    <wpml:actionGroupMode>sequence</wpml:actionGroupMode>
+    <wpml:actionTrigger><wpml:actionTriggerType>reachPoint</wpml:actionTriggerType></wpml:actionTrigger>
+    ${actionList}
+  </wpml:actionGroup>`;
+  return `<Placemark>
+    <name>航点${i+1}</name>
+    <Point><coordinates>${Number(w.lng).toFixed(10)},${Number(w.lat).toFixed(10)}</coordinates></Point>
+    <wpml:index>${i}</wpml:index>
+    <wpml:height>${Number(w.height)||80}</wpml:height>
+    <wpml:ellipsoidHeight>${Number(w.height)||80}</wpml:ellipsoidHeight>
+    <wpml:executeHeight>${Number(w.height)||80}</wpml:executeHeight>
+    <wpml:waypointSpeed>${Number(w.speed)||10}</wpml:waypointSpeed>
+    <wpml:useGlobalHeight>1</wpml:useGlobalHeight>
+    <wpml:waypointHeadingParam><wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode><wpml:waypointHeadingAngle>0</wpml:waypointHeadingAngle><wpml:waypointPoiPoint>0.000000,0.000000,0.000000</wpml:waypointPoiPoint><wpml:waypointHeadingAngleEnable>0</wpml:waypointHeadingAngleEnable><wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode></wpml:waypointHeadingParam>
+    <wpml:waypointTurnParam><wpml:waypointTurnMode>${enterpriseTurnModeValue()}</wpml:waypointTurnMode><wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist></wpml:waypointTurnParam>
+    <wpml:useStraightLine>0</wpml:useStraightLine>
+    <wpml:gimbalPitchAngle>${Number(w.gimbal)||-90}</wpml:gimbalPitchAngle>
+    ${actionXml}
+    <wpml:waypointGimbalHeadingParam><wpml:waypointGimbalPitchAngle>0</wpml:waypointGimbalPitchAngle><wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle></wpml:waypointGimbalHeadingParam>
+    <wpml:isRisky>0</wpml:isRisky>
+    <wpml:waypointWorkType>0</wpml:waypointWorkType>
+  </Placemark>`;
+}
+
+function wpmlPlacemark(w,i){
+  const p=activeProfile();
+  return p.type==='consumer'?consumerWpmlPlacemark(w,i):enterpriseWpmlPlacemark(w,i);
+}
+function buildTemplateKml(wps){
+  const p=activeProfile(); const t=Date.now();
+  if(p.type==='consumer'){
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="${p.ns}">
+  <Document>
+    <wpml:author>fly</wpml:author>
+    <wpml:createTime>${t}</wpml:createTime>
+    <wpml:updateTime>${t}</wpml:updateTime>
+    ${missionConfig()}
+  </Document>
+</kml>`;
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="${p.ns}"><Document><wpml:author>fly</wpml:author><wpml:createTime>${t}</wpml:createTime><wpml:updateTime>${t}</wpml:updateTime>${missionConfig()}<Folder><wpml:templateType>waypoint</wpml:templateType><wpml:templateId>0</wpml:templateId><wpml:waylineCoordinateSysParam><wpml:coordinateMode>WGS84</wpml:coordinateMode><wpml:heightMode>relativeToStartPoint</wpml:heightMode><wpml:positioningType>GPS</wpml:positioningType></wpml:waylineCoordinateSysParam><wpml:autoFlightSpeed>${Number(speed.value)||10}</wpml:autoFlightSpeed><wpml:globalHeight>${Number(height.value)||80}</wpml:globalHeight><wpml:gimbalPitchMode>manual</wpml:gimbalPitchMode>${wps.map(wpmlPlacemark).join('')}</Folder></Document></kml>`;
+}
+function buildWaylinesWpml(wps){
+  const p=activeProfile();
+  const distanceTag=p.type==='consumer'?'<wpml:distance>0</wpml:distance><wpml:duration>0</wpml:duration>':'';
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="${p.ns}">
+  <Document>
+    ${missionConfig()}
+    <Folder>
+      <wpml:templateId>0</wpml:templateId>
+      <wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode>
+      <wpml:waylineId>0</wpml:waylineId>
+      ${distanceTag}
+      <wpml:autoFlightSpeed>${Number(speed.value)||p.defaultSpeed||10}</wpml:autoFlightSpeed>
+      ${terrainFollowWaylineXml()}
+      ${wps.map(wpmlPlacemark).join('\n')}
+    </Folder>
+  </Document>
+</kml>`;
+}
+function buildKML(wps){ return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>航线</name><Style id="wp"><IconStyle><scale>0.8</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style><Placemark><name>航线</name><LineString><tessellate>1</tessellate><coordinates>${wps.map(w=>`${w.lng},${w.lat},${w.height}`).join(' ')}</coordinates></LineString></Placemark>${wps.map((w,i)=>`<Placemark><name>航点${i+1}</name><styleUrl>#wp</styleUrl><description><![CDATA[高度:${w.height}<br>速度:${w.speed}<br>动作:${w.action}<br>云台:${w.gimbal}<br>悬停:${w.hover}]]></description><Point><coordinates>${w.lng},${w.lat},${w.height}</coordinates></Point></Placemark>`).join('')}</Document></kml>`; }
+function download(name,text,type){ const blob=new Blob([text],{type}); saveBlob(blob,name); }
+function saveBlob(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+function bbox(poly){return {minLat:Math.min(...poly.map(p=>p[0])),maxLat:Math.max(...poly.map(p=>p[0])),minLng:Math.min(...poly.map(p=>p[1])),maxLng:Math.max(...poly.map(p=>p[1]))};}
+function centroid(poly){let lat=0,lng=0; poly.forEach(p=>{lat+=p[0];lng+=p[1];}); return [lat/poly.length,lng/poly.length];}
+function pointInPoly(pt,poly){const x=pt[1],y=pt[0];let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i][1],yi=poly[i][0],xj=poly[j][1],yj=poly[j][0];const intersect=((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi+1e-12)+xi);if(intersect)inside=!inside;}return inside;}
+function dist(a,b){const R=6371000, p1=a.lat!==undefined?[a.lat,a.lng]:a, p2=b.lat!==undefined?[b.lat,b.lng]:b; const dLat=(p2[0]-p1[0])*Math.PI/180,dLng=(p2[1]-p1[1])*Math.PI/180; const la1=p1[0]*Math.PI/180,la2=p2[0]*Math.PI/180; const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(h));}
+function metersToLat(m){return m/111320;} function metersToLng(m,lat){return m/(111320*Math.cos(lat*Math.PI/180));}
+function polyAreaMeters(poly){ let area=0; const lat0=centroid(poly)[0], kx=111320*Math.cos(lat0*Math.PI/180), ky=111320; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const xi=poly[i][1]*kx, yi=poly[i][0]*ky, xj=poly[j][1]*kx, yj=poly[j][0]*ky; area+=(xj+xi)*(yj-yi); } return Math.abs(area/2); }
+window.addEventListener('load',()=>{initMap();onTemplateChanged();onDroneChanged();onRouteOrderChanged();onExportModeChanged();updateNoFlyInfo();setPlanMode('auto');});
+</script>
+</body>
+</html>
