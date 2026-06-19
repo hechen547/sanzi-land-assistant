@@ -1,4 +1,4 @@
-# 三资图斑辅助软件
+# 三资辅助软件
 
 面向农村集体“三资”图斑巡查、无人机航线规划和现场照片整理工作的 Windows 桌面工具。
 
@@ -7,6 +7,8 @@
 > 照片扫描、水印生成、批量命名、GPS 匹配和文件整理均在本机完成。
 >
 > 平台登录、图斑下载、照片上传以及在线地图底图需要联网。
+
+当前正式版本：`1.0`
 
 ## 主要功能
 
@@ -227,6 +229,37 @@ uv run pytest
 - 上传前地区和图斑编号校验；
 - 水印生成；
 - 主要界面组件的冒烟检查。
+
+## Windows 正式打包
+
+正式版采用 `Nuitka Standalone + Inno Setup`：
+
+- Python 业务代码由 Nuitka 转换并编译为本机程序，提高源码逆向门槛；
+- Qt、Qt WebEngine、Pillow 和 Shapely 运行库随程序发布；
+- Inno Setup 生成全中文标准安装程序；
+- 同时生成一个解压即可运行的免安装版。
+
+准备项目构建环境：
+
+```powershell
+uv sync --group build
+```
+
+电脑还需要安装 Inno Setup 6。准备完成后运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_tools\build_release.ps1
+```
+
+构建结果位于 `release` 目录：
+
+```text
+三资辅助软件_1.0_安装程序.exe
+三资辅助软件_1.0_免安装版.zip
+发布文件校验值_SHA256.txt
+```
+
+安装包、免安装版和编译中间目录不会提交到 Git。
 
 ## 反馈与贡献
 

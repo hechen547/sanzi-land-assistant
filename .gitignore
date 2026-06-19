@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 output/
+build/
+release/
 startup-error.log
 .codex/
 .agents/

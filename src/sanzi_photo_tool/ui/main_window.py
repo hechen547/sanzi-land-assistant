@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..models.photo import PhotoInfo
+from ..runtime import APP_NAME, application_resource, package_resource
 from ..services.photo_organizer import (
     analyze_photo_land_matches,
     organize_photos_by_land,
@@ -1769,7 +1770,7 @@ class VisibleLandDownloadPage(QWidget):
         self.setObjectName("workspacePage")
         self.profile = profile
         raw_export_script = (
-            Path(__file__).resolve().parents[1] / "resources" / "visible_land_export.js"
+            package_resource("resources", "visible_land_export.js")
         ).read_text(encoding="utf-8")
         self.export_script = f"JSON.stringify({raw_export_script})"
 
@@ -2467,7 +2468,7 @@ class SanziUploadPage(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("三资图斑辅助工具")
+        self.setWindowTitle(APP_NAME)
         self.resize(1440, 900)
         self.setMinimumSize(1080, 680)
         self.state = AppState()
@@ -2518,11 +2519,10 @@ class MainWindow(QMainWindow):
             self.state,
             self.run_task,
         )
-        project_root = Path(__file__).resolve().parents[3]
         self.route_page = HtmlToolPage(
             "制作无人机航线",
             "在地图上规划飞行路线，并保存为无人机可用的航线文件",
-            project_root / "index.html",
+            application_resource("index.html"),
             [
                 "导入图斑文件，或在地图上选择需要巡查的区域。",
                 "选择无人机型号并填写飞行高度、速度等信息。",
@@ -2533,7 +2533,7 @@ class MainWindow(QMainWindow):
         self.map_page = HtmlToolPage(
             "查看照片地图",
             "在地图上查看照片位置、图斑和航线",
-            project_root / "gps_map.html",
+            application_resource("gps_map.html"),
             [
                 "通过页面中的“图层工具”加载图斑或航线文件。",
                 "使用搜索框查找图斑编号或名称。",
@@ -2589,7 +2589,7 @@ class MainWindow(QMainWindow):
         mark.setObjectName("brandMark")
         brand_text = QVBoxLayout()
         brand_text.setSpacing(0)
-        name = QLabel("三资图斑辅助工具")
+        name = QLabel(APP_NAME)
         name.setObjectName("brandName")
         privacy_note = QLabel("照片与本地文件均在本机处理；地图、平台登录及上传功能仅在使用时联网")
         privacy_note.setObjectName("brandSubtitle")
