@@ -13,6 +13,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .kml_parser import read_land_kml_files
+
 PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png"}
 LANDCODE_PATTERN = re.compile(r"\d{12,}")
 
@@ -22,11 +24,12 @@ class UploadOptions:
     base_url: str = "http://222.143.69.159:38762"
     origin: str = "http://222.143.69.159:38590"
     token: str = ""
-    token_header: str = "Token"
+    token_header: str = "Authorization"
     cookie: str = ""
     districtcode: str = ""
     districtname: str = ""
     photo_root: str = ""
+    kml_paths: tuple[str, ...] = ()
     max_photos: int = 3
     only_with_use_status: bool = True
     skip_uploaded: bool = True
@@ -68,6 +71,75 @@ def scan_upload_groups(photo_root: str | Path) -> list[PhotoGroup]:
         )
         groups.append(PhotoGroup(match.group(0), folder.name, photos))
     return groups
+
+
+def read_upload_landcodes(kml_paths: list[str] | tuple[str, ...]) -> set[str]:
+    if not kml_paths:
+        raise ValueError("请选择本次上传对应的KML图斑文件")
+    codes: set[str] = set()
+    for land in read_land_kml_files(list(kml_paths)):
+        raw = (land.landcode or land.name or "").strip()
+        match = LANDCODE_PATTERN.search(raw)
+        if match:
+            codes.add(match.group(0))
+    if not codes:
+        raise ValueError("所选KML中没有识别到图斑编号")
+    return codes
+
+
+def validate_upload_groups(
+    groups: list[PhotoGroup],
+    kml_codes: set[str],
+    districtcode: str,
+) -> list[UploadResult]:
+    district = districtcode.strip()
+    if not district:
+        return [
+            UploadResult(
+                group.landcode,
+                f"{len(group.photos)} 张",
+                "阻止",
+                "没有识别到当前登录地区，请重新进入下载平台图斑页面后再试",
+            )
+            for group in groups
+        ]
+
+    invalid: list[UploadResult] = []
+    kml_outside_district = sorted(
+        code for code in kml_codes if not code.startswith(district)
+    )
+    if kml_outside_district:
+        sample = "、".join(kml_outside_district[:3])
+        return [
+            UploadResult(
+                group.landcode,
+                f"{len(group.photos)} 张",
+                "阻止",
+                f"所选KML不属于当前登录地区 {district}，示例编号：{sample}",
+            )
+            for group in groups
+        ]
+
+    for group in groups:
+        if not group.landcode.startswith(district):
+            invalid.append(
+                UploadResult(
+                    group.landcode,
+                    f"{len(group.photos)} 张",
+                    "阻止",
+                    f"文件夹编号不属于当前登录地区 {district}",
+                )
+            )
+        elif group.landcode not in kml_codes:
+            invalid.append(
+                UploadResult(
+                    group.landcode,
+                    f"{len(group.photos)} 张",
+                    "阻止",
+                    "文件夹编号不在所选KML中",
+                )
+            )
+    return invalid
 
 
 def average_pick(photos: list[Path], count: int) -> list[Path]:
@@ -167,7 +239,13 @@ class SanziClient:
             "X-Requested-With": "XMLHttpRequest",
         }
         if self.options.token:
-            headers[self.options.token_header or "Token"] = self.options.token
+            header_name = self.options.token_header or "Authorization"
+            token = self.options.token.strip()
+            if header_name.casefold() == "authorization" and not token.casefold().startswith(
+                ("bearer ", "basic ")
+            ):
+                token = f"bearer {token}"
+            headers[header_name] = token
         if self.options.cookie:
             headers["Cookie"] = self.options.cookie
         return headers
@@ -183,6 +261,21 @@ def run_upload(
     groups = scan_upload_groups(options.photo_root)
     if not groups:
         raise ValueError("照片目录中没有找到包含12位以上图斑编号的子文件夹")
+    kml_codes = read_upload_landcodes(options.kml_paths)
+    blocked = validate_upload_groups(groups, kml_codes, options.districtcode)
+    if blocked:
+        blocked_codes = {item.landcode for item in blocked}
+        for group in groups:
+            if group.landcode not in blocked_codes:
+                blocked.append(
+                    UploadResult(
+                        group.landcode,
+                        f"{len(group.photos)} 张",
+                        "阻止",
+                        "发现其他编号不一致，已取消整批上传",
+                    )
+                )
+        return sorted(blocked, key=lambda item: item.landcode)
     api = client or SanziClient(options)
     results: list[UploadResult] = []
     for group in groups:

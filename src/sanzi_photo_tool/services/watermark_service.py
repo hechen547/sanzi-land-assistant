@@ -80,9 +80,34 @@ def render_watermarked_image(
     config: WatermarkConfig,
     max_size: tuple[int, int] | None = None,
 ) -> Image.Image:
+    if max_size and source.format in {"JPEG", "MPO"}:
+        source.draft("RGB", max_size)
     image = ImageOps.exif_transpose(source).convert("RGBA")
     if max_size:
         image.thumbnail(max_size, Image.Resampling.LANCZOS)
+    if config.enabled:
+        _draw_watermark(image, build_watermark_lines(photo, config), config)
+    return image
+
+
+def prepare_preview_image(
+    source: Image.Image,
+    max_size: tuple[int, int] = (900, 650),
+) -> Image.Image:
+    """快速生成已转正的预览底图，供切换设置时重复使用。"""
+    if source.format in {"JPEG", "MPO"}:
+        source.draft("RGB", max_size)
+    image = ImageOps.exif_transpose(source).convert("RGBA")
+    image.thumbnail(max_size, Image.Resampling.LANCZOS)
+    return image
+
+
+def render_watermark_on_preview(
+    prepared: Image.Image,
+    photo: PhotoInfo,
+    config: WatermarkConfig,
+) -> Image.Image:
+    image = prepared.copy()
     if config.enabled:
         _draw_watermark(image, build_watermark_lines(photo, config), config)
     return image

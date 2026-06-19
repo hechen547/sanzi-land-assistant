@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Iterable
 
@@ -40,8 +41,17 @@ def collect_image_paths(
 def scan_photos(
     source: str | Path | Iterable[str | Path],
     recursive: bool = True,
+    workers: int = 1,
 ) -> list[PhotoInfo]:
-    return [read_photo_info(path) for path in collect_image_paths(source, recursive)]
+    paths = collect_image_paths(source, recursive)
+    worker_count = max(1, min(int(workers), 4, len(paths) or 1))
+    if worker_count == 1:
+        return [read_photo_info(path) for path in paths]
+    with ThreadPoolExecutor(
+        max_workers=worker_count,
+        thread_name_prefix="photo-scan",
+    ) as executor:
+        return list(executor.map(read_photo_info, paths))
 
 
 def read_photo_info(path: str | Path) -> PhotoInfo:
@@ -95,4 +105,3 @@ def _dms_to_decimal(value: object, ref: object) -> float | None:
         return decimal
     except (TypeError, ValueError, ZeroDivisionError):
         return None
-

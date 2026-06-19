@@ -409,25 +409,67 @@ QStatusBar {
     color: #667589;
 }
 
-QMessageBox {
+QPushButton#helpButton {
+    min-height: 29px;
+    padding: 0 12px;
+    color: #1769e0;
+    background: #f5f9ff;
+    border: 1px solid #b9d2f4;
+    border-radius: 15px;
+    font-weight: 600;
+}
+
+QPushButton#helpButton:hover {
+    background: #eaf2ff;
+    border-color: #77a9ec;
+}
+
+QDialog#appMessageDialog, QDialog#taskProgressDialog {
     background: white;
 }
 
-QMessageBox QLabel {
+QDialog#appMessageDialog QLabel,
+QDialog#taskProgressDialog QLabel {
     background: transparent;
-    color: #1d2938;
-    min-width: 180px;
 }
 
-QMessageBox QPushButton {
-    min-width: 72px;
-    min-height: 30px;
-    background: white;
-    color: #243247;
-    border: 1px solid #bfcbd8;
+QLabel#dialogTitle {
+    color: #172334;
+    font-size: 18px;
+    font-weight: 700;
 }
 
-QMessageBox QPushButton:hover {
-    background: #edf4ff;
-    border-color: #79a9e8;
+QLabel#dialogMessage {
+    color: #566579;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+QPlainTextEdit#dialogDetails {
+    background: #f6f8fa;
+    color: #5a6879;
+    border: 1px solid #dce3eb;
+    border-radius: 7px;
+    padding: 9px;
+    font-family: Consolas, "Microsoft YaHei UI";
+    font-size: 11px;
+}
+
+QProgressBar {
+    min-height: 7px;
+    max-height: 7px;
+    background: #e7edf4;
+    border: none;
+    border-radius: 3px;
+}
+
+QProgressBar::chunk {
+    background: #2478ed;
+    border-radius: 3px;
+}
+
+QProgressBar#taskProgressBar {
+    min-height: 9px;
+    max-height: 9px;
+    margin-top: 7px;
 }
