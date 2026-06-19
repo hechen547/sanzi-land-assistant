@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import os
 from pathlib import Path
 
 
@@ -32,3 +33,11 @@ def application_resource(filename: str) -> Path:
     if external.exists():
         return external
     return package_resource("web", filename)
+
+
+def user_data_dir() -> Path:
+    """返回当前用户可写的数据目录。"""
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home())
+    directory = base / APP_NAME
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
