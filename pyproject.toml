@@ -1,6 +1,6 @@
 [project]
 name = "sanzi-photo-tool"
-version = "1.0.0"
+version = "1.2.0"
 description = "三资图斑下载、无人机航线、照片水印、GPS图斑整理与平台上传工具"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -38,4 +38,7 @@ build = [
     "nuitka>=4.1.2",
     "ordered-set>=4.1.0",
     "zstandard>=0.25.0",
+]
+dev = [
+    "pytest>=9.1.0",
 ]

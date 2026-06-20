@@ -212,7 +212,7 @@ wheels = [
 
 [[package]]
 name = "sanzi-photo-tool"
-version = "0.1.0"
+version = "1.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "pillow" },
@@ -231,6 +231,9 @@ build = [
     { name = "ordered-set" },
     { name = "zstandard" },
 ]
+dev = [
+    { name = "pytest" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -247,6 +250,7 @@ build = [
     { name = "ordered-set", specifier = ">=4.1.0" },
     { name = "zstandard", specifier = ">=0.25.0" },
 ]
+dev = [{ name = "pytest", specifier = ">=9.1.0" }]
 
 [[package]]
 name = "shapely"

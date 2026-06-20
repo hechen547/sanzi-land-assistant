@@ -1,12 +1,13 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $BuildRoot = Join-Path $ProjectRoot "build\nuitka"
 $DistDir = Join-Path $BuildRoot "三资辅助软件.dist"
 $ReleaseDir = Join-Path $ProjectRoot "release"
-$PortableDir = Join-Path $ReleaseDir "三资辅助软件_1.0_免安装版"
-$PortableZip = Join-Path $ReleaseDir "三资辅助软件_1.0_免安装版.zip"
+$PortableDir = Join-Path $ReleaseDir "三资辅助软件_1.2_免安装版"
+$PortableZip = Join-Path $ReleaseDir "三资辅助软件_1.2_免安装版.zip"
+$ReleaseNotes = Join-Path $ReleaseDir "v1.2-release-notes.md"
 $InnoCompiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
 function Copy-QtRuntimeDependencies {
@@ -117,8 +118,8 @@ $NuitkaArgs = @(
     "--company-name=三资辅助软件",
     "--product-name=三资辅助软件",
     "--file-description=三资图斑、照片与无人机航线辅助工具",
-    "--file-version=1.0.0.0",
-    "--product-version=1.0.0.0",
+    "--file-version=1.2.0.0",
+    "--product-version=1.2.0.0",
     "--copyright=三资辅助软件",
     "--output-filename=三资辅助软件.exe",
     "--output-dir=$BuildRoot",
@@ -126,7 +127,7 @@ $NuitkaArgs = @(
     "$PSScriptRoot\app_entry.py"
 )
 
-Write-Host "正在使用 Nuitka 编译三资辅助软件 1.0..."
+Write-Host "正在使用 Nuitka 编译三资辅助软件 1.2..."
 & $Python @NuitkaArgs
 if ($LASTEXITCODE -ne 0) {
     throw "Nuitka 编译失败，退出代码：$LASTEXITCODE"
@@ -150,14 +151,18 @@ if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup 编译失败，退出代码：$LASTEXITCODE"
 }
 
-$HashFile = Join-Path $ReleaseDir "发布文件校验值_SHA256.txt"
-$ReleaseFiles = Get-ChildItem -LiteralPath $ReleaseDir -File |
-    Where-Object { $_.Name -ne (Split-Path $HashFile -Leaf) }
+$HashFile = Join-Path $ReleaseDir "三资辅助软件_1.2_SHA256.txt"
+$ReleaseFiles = @(
+    Get-Item -LiteralPath $PortableZip
+    Get-Item -LiteralPath (Join-Path $ReleaseDir "三资辅助软件_1.2_安装程序.exe")
+)
 $HashLines = foreach ($File in $ReleaseFiles) {
     $Hash = (Get-FileHash -LiteralPath $File.FullName -Algorithm SHA256).Hash
     "$Hash  $($File.Name)"
 }
 $HashLines | Set-Content -LiteralPath $HashFile -Encoding UTF8
+Copy-Item -LiteralPath (Join-Path $ProjectRoot "1.2发布说明.md") `
+    -Destination $ReleaseNotes -Force
 
 Write-Host "发布文件已生成："
 Get-ChildItem -LiteralPath $ReleaseDir -File | Select-Object Name, Length, LastWriteTime

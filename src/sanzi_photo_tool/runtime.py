@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import sys
+import os
 from pathlib import Path
 
 
 APP_NAME = "三资辅助软件"
-APP_VERSION = "1.0"
-APP_VERSION_FULL = "1.0.0"
+APP_VERSION = "1.2"
+APP_VERSION_FULL = "1.2.0"
 
 
 def is_compiled() -> bool:
@@ -32,3 +33,11 @@ def application_resource(filename: str) -> Path:
     if external.exists():
         return external
     return package_resource("web", filename)
+
+
+def user_data_dir() -> Path:
+    """返回当前用户可写的数据目录。"""
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home())
+    directory = base / APP_NAME
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
