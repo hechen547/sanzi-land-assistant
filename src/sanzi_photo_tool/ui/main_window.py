@@ -4,6 +4,7 @@ import json
 import shutil
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -21,6 +22,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QColorDialog,
     QDoubleSpinBox,
@@ -47,6 +49,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -61,6 +64,7 @@ from ..services.photo_organizer import (
 from ..services.photo_scanner import scan_photos
 from ..services.rename_service import build_rename_plan, unique_destination
 from ..services.sanzi_upload import (
+    BLOCKING_UPLOAD_STATUSES,
     UploadOptions,
     UploadResult,
     read_upload_landcodes,
@@ -69,6 +73,7 @@ from ..services.sanzi_upload import (
     validate_upload_groups,
     write_upload_log,
 )
+from ..services.task_control import TaskCancelled, TaskControl
 from ..services.watermark_service import (
     WatermarkConfig,
     apply_watermark,
@@ -96,25 +101,30 @@ class AppState(QObject):
 class WorkerSignals(QObject):
     result = Signal(object)
     error = Signal(str)
+    cancelled = Signal(str)
+    progress = Signal(int, str)
     finished = Signal()
 
 
 class Worker(QRunnable):
-    def __init__(self, function: Callable, *args) -> None:
+    def __init__(self, function: Callable, *args, **kwargs) -> None:
         super().__init__()
         self.function = function
         self.args = args
+        self.kwargs = kwargs
         self.signals = WorkerSignals()
 
     def run(self) -> None:
         try:
-            result = self.function(*self.args)
+            result = self.function(*self.args, **self.kwargs)
+        except TaskCancelled as exc:
+            self.signals.cancelled.emit(str(exc))
         except Exception as exc:
-            self.signals.finished.emit()
             self.signals.error.emit(str(exc))
         else:
-            self.signals.finished.emit()
             self.signals.result.emit(result)
+        finally:
+            self.signals.finished.emit()
 
 
 class AppMessageDialog(QDialog):
@@ -204,7 +214,16 @@ class AppMessageDialog(QDialog):
 class TaskProgressDialog(QDialog):
     """任务运行时的统一等待窗口。"""
 
-    def __init__(self, parent: QWidget, title: str) -> None:
+    cancel_requested = Signal()
+
+    def __init__(
+        self,
+        parent: QWidget,
+        title: str,
+        *,
+        cancellable: bool = False,
+        determinate: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("taskProgressDialog")
         self.setWindowTitle("正在处理")
@@ -215,15 +234,46 @@ class TaskProgressDialog(QDialog):
         root.setSpacing(12)
         heading = QLabel(title.rstrip("…"))
         heading.setObjectName("dialogTitle")
-        description = QLabel("请稍候，完成后软件会自动显示结果。")
-        description.setObjectName("dialogMessage")
+        self.description = QLabel("请稍候，完成后软件会自动显示结果。")
+        self.description.setObjectName("dialogMessage")
+        self.description.setWordWrap(True)
         self.progress = QProgressBar()
         self.progress.setObjectName("taskProgressBar")
-        self.progress.setRange(0, 0)
+        if determinate:
+            self.progress.setRange(0, 100)
+        else:
+            self.progress.setRange(0, 0)
+        self.progress.setValue(0)
         self.progress.setTextVisible(False)
+        self.percent_label = QLabel("0%" if determinate else "处理中")
+        self.percent_label.setObjectName("mutedLabel")
         root.addWidget(heading)
-        root.addWidget(description)
+        root.addWidget(self.description)
         root.addWidget(self.progress)
+        footer = QHBoxLayout()
+        footer.addWidget(self.percent_label)
+        footer.addStretch()
+        self.cancel_button: QPushButton | None = None
+        if cancellable:
+            self.cancel_button = QPushButton("停止任务")
+            self.cancel_button.clicked.connect(self._request_cancel)
+            footer.addWidget(self.cancel_button)
+        root.addLayout(footer)
+
+    def update_progress(self, percent: int, message: str) -> None:
+        self.progress.setRange(0, 100)
+        self.progress.setValue(max(0, min(100, percent)))
+        self.percent_label.setText(f"{max(0, min(100, percent))}%")
+        if message:
+            self.description.setText(message)
+
+    def _request_cancel(self) -> None:
+        if self.cancel_button is None:
+            return
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.setText("正在停止…")
+        self.description.setText("正在停止任务，请等待当前这一步结束。")
+        self.cancel_requested.emit()
 
     def closeEvent(self, event) -> None:
         if self.parent() and getattr(self.parent(), "active_tasks", 0):
@@ -952,6 +1002,9 @@ class PhotoWorkspacePage(QWidget):
                 "fast" if self.fast_watermark_radio.isChecked() else "compatible",
             ),
             self._process_done,
+            cancellable=True,
+            determinate=True,
+            with_task_control=True,
         )
 
     def _process_done(self, result: tuple[int, list[str]]) -> None:
@@ -1085,26 +1138,53 @@ class LandWorkspacePage(QWidget):
         self.photo_source_label.setWordWrap(True)
         layout.addWidget(self.photo_source_label)
 
-        layout.addWidget(_caption("3. 照片归属范围"))
+        layout.addWidget(_caption("3. 照片离图斑多远，也允许归到这个图斑"))
         distance_row = QHBoxLayout()
-        distance_label = QLabel("图斑外允许距离")
-        distance_label.setToolTip("0 米表示只整理确定在图斑内部的照片，最稳妥。")
+        distance_label = QLabel("允许偏离图斑边界")
+        distance_label.setToolTip("照片在图斑外，但距离边界不超过这个数值时，也会归入最近图斑。")
         distance_row.addWidget(distance_label)
         self.distance_spin = QDoubleSpinBox()
         self.distance_spin.setRange(0, 100000)
         self.distance_spin.setDecimals(2)
         self.distance_spin.setSuffix(" 米")
-        self.distance_spin.setToolTip("推荐保持 0 米。数值越大，图斑附近的照片也可能被归入。")
+        self.distance_spin.setToolTip("山区可先用 20～30 米。超过 50 米时，照片分错图斑的风险明显增加。")
         distance_row.addWidget(self.distance_spin, 1)
         layout.addLayout(distance_row)
-        distance_help = QLabel("建议保持 0 米：只整理确定在图斑里面的照片，最稳妥。")
+        distance_help = QLabel(
+            "怎么填：0 米最准确；普通地区建议 10～20 米；山区可先试 20～30 米。"
+            "数值越大，找到的照片越多，但分错图斑的风险也越高。"
+        )
         distance_help.setObjectName("mutedLabel")
         distance_help.setWordWrap(True)
         layout.addWidget(distance_help)
 
-        layout.addWidget(_caption("4. 原照片怎么处理"))
+        layout.addWidget(_caption("4. 空图斑要不要借用附近照片（可选）"))
+        self.supplement_empty_check = QCheckBox("空文件夹自动补一张附近照片")
+        self.supplement_empty_check.setChecked(True)
+        layout.addWidget(self.supplement_empty_check)
+        supplement_row = QHBoxLayout()
+        supplement_row.addWidget(QLabel("从边界多远内找照片"))
+        self.supplement_distance_spin = QDoubleSpinBox()
+        self.supplement_distance_spin.setRange(0, 100000)
+        self.supplement_distance_spin.setDecimals(2)
+        self.supplement_distance_spin.setSuffix(" 米")
+        self.supplement_distance_spin.setValue(20)
+        supplement_row.addWidget(self.supplement_distance_spin, 1)
+        layout.addLayout(supplement_row)
+        supplement_help = QLabel(
+            "只处理第一轮仍没有照片的图斑，不会改变已有照片的图斑。"
+            "建议 10～20 米；同一张照片可能被复制到多个空图斑，距离太大会配错。"
+        )
+        supplement_help.setObjectName("mutedLabel")
+        supplement_help.setWordWrap(True)
+        layout.addWidget(supplement_help)
+
+        layout.addWidget(_caption("5. 原照片怎么处理"))
         self.copy_radio = QRadioButton("保留原照片（推荐）")
         self.move_radio = QRadioButton("取走原照片（谨慎）")
+        self.operation_group = QButtonGroup(self)
+        self.operation_group.addButton(self.copy_radio)
+        self.operation_group.addButton(self.move_radio)
         self.copy_radio.setChecked(True)
         self.copy_radio.toggled.connect(self._update_operation_help)
         self.move_radio.toggled.connect(self._update_operation_help)
@@ -1119,9 +1199,12 @@ class LandWorkspacePage(QWidget):
         layout.addWidget(self.operation_help)
         self._update_operation_help()
 
-        layout.addWidget(_caption("5. 整理速度"))
+        layout.addWidget(_caption("6. 整理速度"))
         self.fast_transfer_radio = QRadioButton("快速整理（推荐）")
         self.compatible_transfer_radio = QRadioButton("兼容整理")
+        self.transfer_speed_group = QButtonGroup(self)
+        self.transfer_speed_group.addButton(self.fast_transfer_radio)
+        self.transfer_speed_group.addButton(self.compatible_transfer_radio)
         self.fast_transfer_radio.setChecked(True)
         speed_layout = QVBoxLayout()
         speed_layout.setSpacing(7)
@@ -1136,7 +1219,7 @@ class LandWorkspacePage(QWidget):
         speed_help.setWordWrap(True)
         layout.addWidget(speed_help)
 
-        layout.addWidget(_caption("6. 选择保存位置"))
+        layout.addWidget(_caption("7. 选择保存位置"))
         self.output_edit = QLineEdit()
         self.output_edit.setPlaceholderText("选择整理结果要保存到哪里")
         choose_output = QPushButton("选择")
@@ -1260,7 +1343,11 @@ class LandWorkspacePage(QWidget):
             )
 
     def _update_operation_help(self, *_args) -> None:
-        if self.copy_radio.isChecked():
+        copy_mode = self.copy_radio.isChecked()
+        if hasattr(self, "supplement_empty_check"):
+            self.supplement_empty_check.setEnabled(copy_mode)
+            self.supplement_distance_spin.setEnabled(copy_mode)
+        if copy_mode:
             self.operation_help.setObjectName("safeOperationHint")
             self.operation_help.setText(
                 "原文件夹里的照片保持不变，软件会另外复制一份到整理结果中。"
@@ -1308,19 +1395,29 @@ class LandWorkspacePage(QWidget):
         self.run_task(
             "正在查看照片会被分到哪里…",
             analyze_photo_land_matches,
-            (photos, self._paths(), self.distance_spin.value()),
+            (
+                photos,
+                self._paths(),
+                self.distance_spin.value(),
+                self.supplement_empty_check.isChecked()
+                and self.copy_radio.isChecked(),
+                self.supplement_distance_spin.value(),
+            ),
             self._analysis_done,
+            cancellable=True,
+            determinate=True,
+            with_task_control=True,
         )
 
     def _analysis_done(self, result) -> None:
-        lands, matches, dataset_gap_m = result
+        lands, matches, dataset_gap_m, supplements = result
         matched = sum(match.land is not None for match in matches)
         unmatched = len(matches) - matched
         counts = {id(land): 0 for land in lands}
         for match in matches:
             if match.land:
                 counts[id(match.land)] += 1
-        empty = sum(count == 0 for count in counts.values())
+        empty = max(0, sum(count == 0 for count in counts.values()) - len(supplements))
         _set_stat(self.land_metric, str(len(lands)))
         _set_stat(self.matched_metric, str(matched))
         _set_stat(self.unmatched_metric, str(unmatched))
@@ -1396,8 +1493,14 @@ class LandWorkspacePage(QWidget):
                 self.copy_radio.isChecked(),
                 self.distance_spin.value(),
                 "fast" if self.fast_transfer_radio.isChecked() else "compatible",
+                self.supplement_empty_check.isChecked()
+                and self.copy_radio.isChecked(),
+                self.supplement_distance_spin.value(),
             ),
             self._organize_done,
+            cancellable=True,
+            determinate=True,
+            with_task_control=True,
         )
 
     def _organize_done(self, summary) -> None:
@@ -1411,6 +1514,7 @@ class LandWorkspacePage(QWidget):
             f"已将 <b>{summary.succeeded}</b> 张匹配成功的照片放入图斑文件夹。<br>"
             f"未匹配照片：{summary.unmatched} 张（未复制，仅写入 KML）；"
             f"复制失败：{summary.failed} 张；"
+            f"补充附近照片：{summary.supplemented} 张；"
             f"无照片图斑：{summary.empty_lands} 个（未建空文件夹，仅写入 KML）。"
             "<br><br>同时已生成：无照片图斑、未匹配照片、图斑外距离匹配清单"
             "和图斑照片分类工作日志。",
@@ -1517,7 +1621,7 @@ class HtmlToolPage(QWidget):
 class SanziLoginDialog(QDialog):
     LOGIN_URL = (
         "http://222.143.69.159:38590/dist/#/login"
-        "?redirect=%2FdataCollection"
+        "?redirect=%2FdataCollection&fromTokenExpired=1"
     )
 
     def __init__(
@@ -1574,9 +1678,6 @@ class SanziLoginDialog(QDialog):
     def _login_extracted(self, value: object) -> None:
         login_data = platform_login_data(value)
         if not login_data:
-            cached = self.profile.property("platform_login_data")
-            login_data = cached if isinstance(cached, dict) else {}
-        if not login_data:
             self.status_label.setText("还没有检测到登录成功")
             show_warning(
                 self,
@@ -1599,10 +1700,13 @@ LOGIN_STORAGE_SCRIPT = """
   }
 
   const found = {};
-  found.token = sessionStorage.getItem("token") || localStorage.getItem("token") || "";
-  found.tokenName = sessionStorage.getItem("TokenName")
-    || localStorage.getItem("TokenName")
-    || "Authorization";
+  const localToken = localStorage.getItem("token") || "";
+  found.token = localToken || sessionStorage.getItem("token") || "";
+  found.tokenName = localToken
+    ? "Token"
+    : (localStorage.getItem("TokenName")
+      || sessionStorage.getItem("TokenName")
+      || "Token");
   found.districtCode = sessionStorage.getItem("currentDistrictCode")
     || localStorage.getItem("currentDistrictCode") || "";
   const tokenKeys = new Set(["token", "tokenvalue", "accesstoken"]);
@@ -1639,8 +1743,9 @@ LOGIN_STORAGE_SCRIPT = """
     try { walk(JSON.parse(raw)); } catch (_) {}
   }
   return {
+    localToken: localToken,
     token: found.token || "",
-    tokenName: found.tokenName || "Authorization",
+    tokenName: found.tokenName || "Token",
     districtCode: found.districtCode || "",
     districtName: found.districtName || "",
     cookie: document.cookie || "",
@@ -1665,10 +1770,15 @@ def javascript_result_dict(value: object) -> dict[str, object]:
 
 def platform_login_data(value: object) -> dict[str, str]:
     data = javascript_result_dict(value)
-    token = str(data.get("token") or "").strip()
+    local_token = str(data.get("localToken") or "").strip()
+    token = local_token or str(data.get("token") or "").strip()
     if not token:
         return {}
-    token_header = str(data.get("tokenName") or "Authorization").strip()
+    token_header = (
+        "Token"
+        if local_token
+        else str(data.get("tokenName") or "Token").strip()
+    )
     if token_header.casefold() == "authorization" and not token.casefold().startswith(
         ("bearer ", "basic ")
     ):
@@ -1683,27 +1793,38 @@ def platform_login_data(value: object) -> dict[str, str]:
 
 
 def platform_login_data_from_headers(headers: dict[str, str]) -> dict[str, str]:
-    for name, value in headers.items():
-        normalized = name.replace("_", "").replace("-", "").casefold()
-        token = value.strip()
+    def build(name: str, value: str) -> dict[str, str]:
+        return {
+            "token": value,
+            "token_header": name,
+            "districtcode": "",
+            "districtname": "",
+            "cookie": headers.get("Cookie", ""),
+        }
+
+    normalized_headers = [
+        (name, name.replace("_", "").replace("-", "").casefold(), value.strip())
+        for name, value in headers.items()
+    ]
+    for name, normalized, token in normalized_headers:
         if normalized in {
             "token",
             "tokenvalue",
             "accesstoken",
-            "authorization",
             "xauthtoken",
             "xaccesstoken",
         } and len(token) >= 8 and token.casefold() not in {
             "[object object]",
             "undefined",
         }:
-            return {
-                "token": token,
-                "token_header": name,
-                "districtcode": "",
-                "districtname": "",
-                "cookie": headers.get("Cookie", ""),
-            }
+            return build(name, token)
+    for name, normalized, token in normalized_headers:
+        if (
+            normalized == "authorization"
+            and token.casefold().startswith("bearer ")
+            and len(token) >= 8
+        ):
+            return build(name, token)
     return {}
 
 
@@ -1721,7 +1842,7 @@ class PlatformCredentialInterceptor(QWebEngineUrlRequestInterceptor):
         if not self.capture_enabled:
             return
         url = info.requestUrl()
-        if url.host() != "222.143.69.159":
+        if url.host() != "222.143.69.159" or url.port() != 38762:
             return
         headers = {
             bytes(name).decode("latin-1").strip(): bytes(value).decode("latin-1").strip()
@@ -1889,9 +2010,6 @@ class VisibleLandDownloadPage(QWidget):
 
     def _platform_login_extracted(self, value: object) -> None:
         login_data = platform_login_data(value)
-        if not login_data:
-            cached = self.profile.property("platform_login_data")
-            login_data = cached if isinstance(cached, dict) else {}
         self.login_checked.emit(login_data)
         if not login_data:
             self.status_label.setText("请先登录平台，然后进入数据采集地图")
@@ -1960,6 +2078,7 @@ class SanziUploadPage(QWidget):
         self.run_task = run_task
         self.profile = profile
         self.login_data: dict[str, str] = {}
+        self._login_dialog: SanziLoginDialog | None = None
         self._open_login_after_check = False
         self._login_check_retries = 0
         self.results: list[UploadResult] = []
@@ -2166,12 +2285,7 @@ class SanziUploadPage(QWidget):
                 f"当前已使用 <b>{district}</b> 的登录状态，不需要再次登录。",
             )
             return
-        self._open_login_after_check = True
-        self._login_check_retries = 0
-        self.login_status.setText("正在读取下载页面的登录状态…")
-        self.login_button.setEnabled(False)
-        self.login_button.setText("正在确认登录状态…")
-        self.login_check_requested.emit()
+        self._show_login_dialog()
 
     def login_check_finished(self, login_data: dict[str, str]) -> None:
         self.login_button.setEnabled(True)
@@ -2202,11 +2316,29 @@ class SanziUploadPage(QWidget):
         self.login_check_requested.emit()
 
     def _show_login_dialog(self) -> None:
-        dialog = SanziLoginDialog(self.profile, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        if self._login_dialog is not None:
+            self._login_dialog.show()
+            self._login_dialog.raise_()
+            self._login_dialog.activateWindow()
             return
-        self.login_captured.emit(dialog.login_data)
-        self.set_login_data(dialog.login_data)
+        dialog = SanziLoginDialog(self.profile, self)
+        self._login_dialog = dialog
+        dialog.finished.connect(self._login_dialog_finished)
+        dialog.setModal(False)
+        dialog.show()
+
+    def _login_dialog_finished(self, result: int) -> None:
+        dialog = self._login_dialog
+        self._login_dialog = None
+        if dialog is None:
+            return
+        if (
+            result == int(QDialog.DialogCode.Accepted)
+            and dialog.login_data.get("token")
+        ):
+            self.login_captured.emit(dialog.login_data)
+            self.set_login_data(dialog.login_data)
+        dialog.deleteLater()
 
     def set_login_data(self, login_data: dict[str, str]) -> None:
         if not login_data.get("token"):
@@ -2351,7 +2483,7 @@ class SanziUploadPage(QWidget):
     def options(self) -> UploadOptions:
         return UploadOptions(
             token=self.login_data.get("token", ""),
-            token_header=self.login_data.get("token_header", "Authorization"),
+            token_header=self.login_data.get("token_header", "Token"),
             cookie=self.login_data.get("cookie", ""),
             districtcode=self.login_data.get("districtcode", ""),
             districtname=self.login_data.get("districtname", ""),
@@ -2364,18 +2496,31 @@ class SanziUploadPage(QWidget):
         )
 
     def precheck(self) -> None:
+        if not self.login_data.get("token"):
+            show_warning(
+                self,
+                "请先登录平台",
+                "请先点击“打开登录页面”，登录成功后再检查照片。",
+            )
+            return
         self._upload_inputs_changed()
         self.run_task(
             "正在检查三资平台和照片…",
             run_upload,
             (self.options(), True),
-            self._results_ready,
+            self._precheck_results_ready,
+            cancellable=True,
+            determinate=True,
+            with_task_control=True,
         )
 
     def upload(self) -> None:
         if (
             not any(result.status == "可上传" for result in self.results)
-            or any(result.status == "阻止" for result in self.results)
+            or any(
+                result.status in BLOCKING_UPLOAD_STATUSES
+                for result in self.results
+            )
         ):
             show_warning(
                 self,
@@ -2395,12 +2540,44 @@ class SanziUploadPage(QWidget):
             "正在上传照片到三资平台…",
             run_upload,
             (self.options(), False),
-            self._results_ready,
+            self._upload_results_ready,
+            cancellable=True,
+            determinate=True,
+            with_task_control=True,
         )
 
-    def _results_ready(self, results: list[UploadResult]) -> None:
+    def _precheck_results_ready(self, results: list[UploadResult]) -> None:
+        report_path: Path | None = None
+        report_error = ""
+        photo_root = Path(self.photo_root_edit.text().strip()).expanduser()
+        if photo_root.is_dir():
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_path = photo_root / f"上传前检查结果_{timestamp}.csv"
+                write_upload_log(results, report_path)
+            except Exception as exc:
+                report_path = None
+                report_error = str(exc)
+        self._results_ready(
+            results,
+            report_path=report_path,
+            report_error=report_error,
+            check_only=True,
+        )
+
+    def _upload_results_ready(self, results: list[UploadResult]) -> None:
+        self._results_ready(results, check_only=False)
+
+    def _results_ready(
+        self,
+        results: list[UploadResult],
+        *,
+        report_path: Path | None = None,
+        report_error: str = "",
+        check_only: bool = False,
+    ) -> None:
         self.results = results
-        blocked = sum(item.status == "阻止" for item in results)
+        blocked = sum(item.status in BLOCKING_UPLOAD_STATUSES for item in results)
         self.result_table.setRowCount(len(results))
         for row, result in enumerate(results):
             display_message = result.message
@@ -2415,6 +2592,13 @@ class SanziUploadPage(QWidget):
                         "成功": "#14815b",
                         "可上传": "#1769e0",
                         "跳过": "#a66300",
+                        "没有照片": "#a66300",
+                        "已经上传": "#a66300",
+                        "资料未完善": "#a66300",
+                        "平台查不到": "#c0392b",
+                        "编码异常": "#c0392b",
+                        "地区不一致": "#c0392b",
+                        "缺少文件夹": "#c0392b",
                         "阻止": "#c0392b",
                         "失败": "#c0392b",
                     }.get(result.status, "#334155")
@@ -2425,28 +2609,56 @@ class SanziUploadPage(QWidget):
         _set_stat(self.skip_metric, str(sum(item.status == "跳过" for item in results)))
         _set_stat(
             self.fail_metric,
-            str(sum(item.status in {"失败", "阻止"} for item in results)),
+            str(
+                sum(
+                    item.status in {"失败", "平台查不到", *BLOCKING_UPLOAD_STATUSES}
+                    for item in results
+                )
+            ),
         )
         ready = sum(item.status == "可上传" for item in results)
         success = sum(item.status == "成功" for item in results)
-        skipped = sum(item.status == "跳过" for item in results)
-        failed = sum(item.status == "失败" for item in results)
+        skipped = sum(
+            item.status in {"跳过", "没有照片", "已经上传", "资料未完善"}
+            for item in results
+        )
+        failed = sum(
+            item.status in {"失败", "平台查不到", *BLOCKING_UPLOAD_STATUSES}
+            for item in results
+        )
         self.upload_button.setEnabled(bool(ready) and not blocked)
+        report_note = ""
+        if report_path:
+            report_note = f"<br><br>检查结果已保存到：<br>{report_path}"
+        elif report_error:
+            report_note = (
+                "<br><br>右侧结果已正常显示，但自动保存结果文件失败。"
+                "<br>你仍可点击“保存结果表”手动保存。"
+            )
         if blocked:
             show_error(
                 self,
                 "已阻止上传",
                 f"发现 <b>{blocked}</b> 个照片文件夹与当前登录地区或所选 KML 不一致。"
-                "<br><br>请重新选择正确的 KML 或照片文件夹，软件不会上传任何照片。",
+                "<br><br>请重新选择正确的 KML 或照片文件夹，软件不会上传任何照片。"
+                f"{report_note}",
             )
         elif ready:
             show_success(
                 self,
                 "检查完成",
                 f"准备上传 {ready} 张照片；暂不上传 {skipped} 项；发现问题 {failed} 项。"
-                "<br><br>确认右侧明细后，可以点击“确认上传照片”。",
+                "<br><br>确认右侧明细后，可以点击“确认上传照片”。"
+                f"{report_note}",
             )
         else:
+            if check_only and (report_path or report_error):
+                show_success(
+                    self,
+                    "检查完成",
+                    f"本次没有可上传照片。{report_note}",
+                )
+                return
             show_success(
                 self,
                 "处理完成",
@@ -2465,6 +2677,234 @@ class SanziUploadPage(QWidget):
             show_success(self, "结果表已保存", f"文件已保存到：<br>{filename}")
 
 
+class UsageGuidePage(QWidget):
+    """面向普通用户的软件使用说明。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("workspacePage")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 18, 22, 18)
+        root.setSpacing(12)
+
+        heading = QLabel("使用说明")
+        heading.setObjectName("pageTitle")
+        subtitle = QLabel("每个功能怎么用、参数怎么填，以及遇到问题怎么办")
+        subtitle.setObjectName("pageSubtitle")
+        root.addWidget(heading)
+        root.addWidget(subtitle)
+
+        content = QSplitter(Qt.Orientation.Horizontal)
+        content.setChildrenCollapsible(False)
+
+        self.chapter_list = QListWidget()
+        self.chapter_list.setObjectName("guideNavigation")
+        self.chapter_list.addItems(
+            [
+                "快速开始",
+                "下载平台图斑",
+                "制作无人机航线",
+                "给照片加水印",
+                "按图斑整理照片",
+                "上传照片到平台",
+                "查看照片地图",
+                "常见问题",
+            ]
+        )
+        self.chapter_list.setFixedWidth(190)
+        content.addWidget(self.chapter_list)
+
+        self.guide = QTextBrowser()
+        self.guide.setObjectName("guideBrowser")
+        self.guide.setOpenExternalLinks(False)
+        self.guide.document().setDefaultStyleSheet(
+            """
+            body { color:#334155; font-family:'Microsoft YaHei UI'; line-height:1.7;
+                   margin:8px 18px 30px; }
+            h1 { color:#10213a; font-size:25px; margin:8px 0 8px; }
+            h2 { color:#10213a; font-size:19px; margin:30px 0 12px;
+                 background:#edf4ff; border-left:5px solid #2478ed;
+                 padding:10px 12px; }
+            h3 { color:#1e3a5f; font-size:15px; margin:20px 0 8px; }
+            p, li, td, th { font-size:13px; }
+            p { margin:7px 0 12px; }
+            li { margin:6px 0; }
+            ol { margin-left:18px; }
+            ul { margin-left:16px; }
+            table { border-collapse:collapse; width:100%; margin:10px 0 16px; }
+            th { background:#eaf2ff; color:#21456f; font-weight:700; }
+            th, td { border:1px solid #d6e1ee; padding:10px; }
+            .hero { background:#1769e0; color:white; border:0; }
+            .hero td { border:0; padding:16px 18px; color:white; }
+            .heroTitle { color:white; font-size:18px; font-weight:700; }
+            .heroText { color:#eaf2ff; font-size:13px; }
+            .flow { background:#f4f8fd; border:1px solid #d8e5f4; }
+            .flow td { border:0; padding:12px 8px; text-align:center; }
+            .flowStep { color:#1769e0; font-weight:700; }
+            .notice { background:#eaf7f1; color:#147557; border-left:4px solid #20a272;
+                      padding:12px 14px; margin:10px 0 18px; }
+            .tip { background:#edf4ff; color:#285a98; border-left:4px solid #4b8ee8;
+                   padding:11px 14px; margin:10px 0 16px; }
+            .warning { background:#fff3df; color:#8b5608; border-left:4px solid #e6a23c;
+                       padding:12px 14px; margin:16px 0; }
+            .statusGood { color:#14815b; font-weight:700; }
+            .statusWait { color:#a66300; font-weight:700; }
+            .statusBad { color:#c0392b; font-weight:700; }
+            """
+        )
+        self.guide.setHtml(
+            """
+            <a name="start"></a>
+            <table class="hero"><tr><td>
+              <div class="heroTitle">三资辅助软件 · 新手使用指南</div>
+              <div class="heroText">跟着步骤操作即可，不需要了解专业的软件术语。</div>
+            </td></tr></table>
+
+            <h1>第一次使用，按这个顺序最稳妥</h1>
+            <table class="flow"><tr>
+              <td><span class="flowStep">① 下载图斑</span></td>
+              <td>→</td><td><span class="flowStep">② 整理照片</span></td>
+              <td>→</td><td><span class="flowStep">③ 查看结果</span></td>
+              <td>→</td><td><span class="flowStep">④ 检查上传</span></td>
+              <td>→</td><td><span class="flowStep">⑤ 确认上传</span></td>
+            </tr></table>
+            <div class="notice"><b>安全原则：</b>先检查、再操作。照片处理默认不覆盖原图，
+            上传前检查也不会上传任何照片。</div>
+
+            <a name="download"></a><h2>1　下载平台图斑</h2>
+            <ol>
+              <li>点击左侧“下载平台图斑”，再点击“登录平台”。</li>
+              <li>登录后选择村庄和工作进度，等待地图上的图斑显示完整。</li>
+              <li>点击“保存当前看到的图斑”，保存为 KML 文件。</li>
+            </ol>
+            <div class="warning"><b>注意：</b>只会保存地图当前已经显示的图斑。
+            村庄和工作进度没有选好时，不要急着保存。</div>
+
+            <a name="route"></a><h2>2　制作无人机航线</h2>
+            <ol>
+              <li>导入需要巡查的 KML 图斑。</li>
+              <li>选择无人机型号，填写飞行高度、速度和航线方向。</li>
+              <li>生成后检查航点是否覆盖目标区域，再导出航线文件。</li>
+            </ol>
+            <div class="tip"><b>建议：</b>第一次先用少量图斑试飞，确认高度和航向适合当地地形。</div>
+
+            <a name="watermark"></a><h2>3　给照片加水印</h2>
+            <ol>
+              <li>选择照片文件夹并读取照片。</li>
+              <li>勾选需要显示的标题、经度、纬度和时间，调整字号、颜色和位置。</li>
+              <li>需要连续编号时开启“批量命名”，文件会从 A1 开始编号。</li>
+              <li>选择新的保存目录，点击“生成新照片”。原照片不会被覆盖。</li>
+            </ol>
+            <div class="tip"><b>照片很多：</b>选“快速处理”。老电脑、机械硬盘或不稳定 U 盘：
+            选“兼容处理”。</div>
+
+            <a name="organize"></a><h2>4　按图斑整理照片</h2>
+            <ol>
+              <li>选择下载好的 KML 图斑文件。</li>
+              <li>选择原始照片文件夹，点击“读取照片”。</li>
+              <li>设置照片允许偏离图斑边界的距离。</li>
+              <li>点击“先看看整理结果”，确认后再开始整理。</li>
+            </ol>
+
+            <h3>“允许偏离图斑边界”怎么填？</h3>
+            <table>
+              <tr><th>数值</th><th>适合情况</th><th>效果</th></tr>
+              <tr><td>0 米</td><td>要求最准确</td><td>只接收图斑内部照片，可能遗漏有 GPS 偏差的照片</td></tr>
+              <tr><td>10～20 米</td><td>普通地区</td><td>兼顾准确和少量 GPS 偏差</td></tr>
+              <tr><td>20～30 米</td><td>山区、信号稍差</td><td>能找回更多照片，建议先预览</td></tr>
+              <tr><td>超过 50 米</td><td>不建议常用</td><td>容易把照片分到相邻图斑</td></tr>
+            </table>
+
+            <h3>“空文件夹自动补一张附近照片”是什么？</h3>
+            <p>第一轮整理后，如果某个图斑仍没有照片，软件会在设定距离内寻找附近照片并复制进去。
+            它适合少量空图斑补充，不适合为了“每个文件夹都有照片”而设置很大的距离。</p>
+            <div class="warning"><b>建议先用 10～20 米。</b>距离越大越容易配错；
+            同一张照片可能被补充到多个空图斑。选择“取走原照片”时不能使用。</div>
+
+            <h3>整理完成后的文件</h3>
+            <ul>
+              <li><b>未匹配照片.kml：</b>有 GPS，但没有找到合适图斑的照片位置。</li>
+              <li><b>无照片图斑.kml：</b>整理结束后仍没有照片的图斑。</li>
+              <li><b>整理结果.csv：</b>每张照片最终分到了哪里。</li>
+              <li><b>图斑外距离匹配照片清单：</b>不在图斑内部、靠距离归入的照片，建议重点检查。</li>
+            </ul>
+
+            <a name="upload"></a><h2>5　上传照片到平台</h2>
+            <ol>
+              <li>登录平台，选择本次照片对应的 KML。</li>
+              <li>选择“按图斑整理照片”生成的结果文件夹。</li>
+              <li>设置每个图斑最多上传几张，通常选择 1～3 张。</li>
+              <li>点击“先检查哪些照片能上传”。这一步只查询，不会上传。</li>
+              <li>查看右侧结果，确认无误后再点击“确认上传照片”。</li>
+            </ol>
+            <p>检查完成后，软件会把检查表自动保存到照片根目录。只有状态为
+            <b>“可上传”</b>的照片才会在确认后上传。</p>
+
+            <h3>检查结果是什么意思？</h3>
+            <ul>
+              <li><span class="statusGood">可上传：</span>图斑存在、资料符合要求，照片可以上传。</li>
+              <li><span class="statusWait">已经上传：</span>平台已有同名照片，本次自动跳过。</li>
+              <li><span class="statusWait">没有照片：</span>对应图斑文件夹存在，但里面没有照片。</li>
+              <li><span class="statusWait">资料未完善：</span>平台上的使用状态或地类现状没有填写完整。</li>
+              <li><span class="statusBad">平台查不到：</span>查询超时、HTTP 502 或平台暂时没有正常响应；不一定是图斑不存在。</li>
+              <li><span class="statusBad">编码异常／地区不一致：</span>文件夹名、KML 或当前账号地区不一致，软件会阻止上传。</li>
+            </ul>
+
+            <a name="map"></a><h2>6　查看照片地图</h2>
+            <ol>
+              <li>加载照片、KML 图斑或航线文件。</li>
+              <li>使用搜索框查找图斑编号或名称。</li>
+              <li>通过图层工具控制照片、图斑和航线的显示。</li>
+            </ol>
+            <p>地图底图需要联网，照片和本地文件仍在本机读取。</p>
+
+            <a name="errors"></a><h2>常见问题和解决办法</h2>
+            <h3>登录后仍提示未登录或 HTTP 401</h3>
+            <p>点击“切换账号”，重新登录并等待平台页面加载完成，再进行检查。不要把 Token 手工写入软件。</p>
+
+            <h3>检查时出现 timed out 或 HTTP 502</h3>
+            <p>通常是网络波动或平台接口繁忙。稍等几分钟重新检查即可；这不等于平台没有这个图斑。</p>
+
+            <h3>照片显示“没有定位”</h3>
+            <p>照片中没有可读取的 EXIF/XMP 经纬度。请确认使用的是无人机原图，而不是聊天软件压缩或截图后的照片。</p>
+
+            <h3>很多照片没有匹配到图斑</h3>
+            <p>先确认照片和 KML 是否属于同一个村庄，再把允许距离从 0 米逐步调到 10、20 或 30 米。
+            不建议直接设成 100 米。</p>
+
+            <h3>软件显示“未响应”</h3>
+            <p>大量照片计算时 Windows 可能短暂显示未响应。请观察进度条；如需结束，点击“停止任务”，
+            等当前照片或网络请求结束后软件会安全停止。</p>
+
+            <h3>保存失败或目录不可写</h3>
+            <p>换到本机磁盘的新文件夹，避免使用只读目录、权限受限目录或连接不稳定的 U 盘。</p>
+
+            <div class="warning">
+              上传前务必先查看检查结果。距离匹配只能处理 GPS 误差，不能保证距离较远的照片一定属于该图斑。
+            </div>
+            """
+        )
+        anchors = (
+            "start",
+            "download",
+            "route",
+            "watermark",
+            "organize",
+            "upload",
+            "map",
+            "errors",
+        )
+        self.chapter_list.currentRowChanged.connect(
+            lambda row: self.guide.scrollToAnchor(anchors[max(0, row)])
+        )
+        self.chapter_list.setCurrentRow(0)
+        content.addWidget(self.guide)
+        content.setSizes([190, 980])
+        content.setStretchFactor(0, 0)
+        content.setStretchFactor(1, 1)
+        root.addWidget(content, 1)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -2475,6 +2915,7 @@ class MainWindow(QMainWindow):
         self.pool = QThreadPool.globalInstance()
         self.active_tasks = 0
         self.task_dialog: TaskProgressDialog | None = None
+        self.current_task_control: TaskControl | None = None
         self.sanzi_profile = QWebEngineProfile("sanzi-platform", self)
         self.sanzi_profile.setPersistentCookiesPolicy(
             QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
@@ -2507,6 +2948,7 @@ class MainWindow(QMainWindow):
                 "按图斑整理照片",
                 "上传照片到平台",
                 "查看照片地图",
+                "使用说明",
             ]
         )
         self.navigation.setFixedWidth(176)
@@ -2543,10 +2985,11 @@ class MainWindow(QMainWindow):
         )
         self.download_page = VisibleLandDownloadPage(self.sanzi_profile)
         self.upload_page = SanziUploadPage(self.run_task, self.sanzi_profile)
+        self.guide_page = UsageGuidePage()
         self.download_page.login_captured.connect(self.upload_page.set_login_data)
         self.download_page.login_checked.connect(self.upload_page.login_check_finished)
         self.download_page.login_captured.connect(self._platform_credentials_captured)
-        self.upload_page.login_captured.connect(self._platform_credentials_captured)
+        self.upload_page.login_captured.connect(self._upload_credentials_captured)
         self.upload_page.login_check_requested.connect(self._check_platform_login)
         self.upload_page.clear_login_requested.connect(self._clear_platform_login)
         if self.platform_credentials:
@@ -2557,6 +3000,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.land_page)
         self.stack.addWidget(self.upload_page)
         self.stack.addWidget(self.map_page)
+        self.stack.addWidget(self.guide_page)
         workspace_layout.addWidget(self.stack, 1)
         root.addWidget(workspace, 1)
         self.setCentralWidget(central)
@@ -2619,12 +3063,17 @@ class MainWindow(QMainWindow):
         if hasattr(self, "upload_page"):
             self.upload_page.set_login_data(merged)
 
+    def _upload_credentials_captured(self, login_data: dict[str, str]) -> None:
+        self._platform_credentials_captured(login_data)
+        # 登录页与平台地图共用同一浏览器环境。自动打开一次数据采集页，
+        # 让平台完成会话初始化并从真实请求中补齐地区和请求头信息。
+        self.download_page.status_label.setText("登录成功，正在自动准备平台会话…")
+        self.download_page.load_platform()
+        QTimer.singleShot(1200, self.download_page.capture_login)
+
     def _check_platform_login(self) -> None:
         cached = self.credential_interceptor.merge_page_data(self.platform_credentials)
-        if cached.get("token"):
-            self.upload_page.login_check_finished(cached)
-            return
-        self.download_page.capture_login()
+        self.upload_page.login_check_finished(cached if cached.get("token") else {})
 
     def _clear_platform_login(self, open_login_after: bool) -> None:
         if self._clearing_platform_login:
@@ -2670,25 +3119,55 @@ class MainWindow(QMainWindow):
         function: Callable,
         args: tuple,
         on_result: Callable | None = None,
+        *,
+        cancellable: bool = False,
+        determinate: bool = False,
+        with_task_control: bool = False,
     ) -> None:
         if self.active_tasks:
             show_info(self, "正在处理", "请等待当前操作完成后，再执行其他操作。")
             return
-        worker = Worker(function, *args)
+        task_control = TaskControl() if with_task_control else None
+        worker_kwargs = {"task_control": task_control} if task_control else {}
+        worker = Worker(function, *args, **worker_kwargs)
+        if task_control:
+            task_control.set_progress_callback(worker.signals.progress.emit)
         if on_result:
             worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._show_error)
+        worker.signals.cancelled.connect(self._task_cancelled)
+        worker.signals.progress.connect(self._task_progress_changed)
         worker.signals.finished.connect(self._task_finished)
         self.active_tasks += 1
-        self.progress.setRange(0, 0)
+        self.current_task_control = task_control
+        if determinate:
+            self.progress.setRange(0, 100)
+            self.progress.setValue(0)
+        else:
+            self.progress.setRange(0, 0)
         self.status_label.setText(label)
-        self.task_dialog = TaskProgressDialog(self, label)
+        self.task_dialog = TaskProgressDialog(
+            self,
+            label,
+            cancellable=cancellable,
+            determinate=determinate,
+        )
+        if task_control:
+            self.task_dialog.cancel_requested.connect(task_control.cancel)
         self.task_dialog.show()
         self.pool.start(worker)
+
+    def _task_progress_changed(self, percent: int, message: str) -> None:
+        self.progress.setRange(0, 100)
+        self.progress.setValue(percent)
+        self.status_label.setText(message)
+        if self.task_dialog:
+            self.task_dialog.update_progress(percent, message)
 
     def _task_finished(self) -> None:
         self.active_tasks = max(0, self.active_tasks - 1)
         if not self.active_tasks:
+            self.current_task_control = None
             self.progress.setRange(0, 1)
             self.progress.setValue(1)
             if self.task_dialog:
@@ -2696,6 +3175,14 @@ class MainWindow(QMainWindow):
                 self.task_dialog.deleteLater()
                 self.task_dialog = None
             self._update_status()
+
+    def _task_cancelled(self, message: str) -> None:
+        self.state.log(message or "操作已停止")
+        show_info(
+            self,
+            "任务已停止",
+            "已按你的要求停止，尚未处理的照片不会继续检查或上传。",
+        )
 
     def _show_error(self, message: str) -> None:
         self.state.log(f"错误：{message}")
@@ -2722,7 +3209,10 @@ def _process_output(
     output: str,
     config: WatermarkConfig,
     processing_mode: str = "fast",
+    task_control: TaskControl | None = None,
 ) -> tuple[int, list[str]]:
+    if task_control:
+        task_control.report(1, "正在准备照片处理任务…")
     output_dir = prepare_writable_output(output)
     if processing_mode not in {"fast", "compatible"}:
         raise ValueError("照片处理速度模式无效")
@@ -2750,13 +3240,38 @@ def _process_output(
 
     workers = min(2, max(1, len(prepared_plans))) if processing_mode == "fast" else 1
     if workers == 1:
-        results = [process_one(item) for item in prepared_plans]
+        results = []
+        for index, item in enumerate(prepared_plans, start=1):
+            if task_control:
+                task_control.checkpoint()
+            results.append(process_one(item))
+            if task_control:
+                task_control.report_range(
+                    2,
+                    100,
+                    index,
+                    len(prepared_plans),
+                    f"正在处理照片 {index}/{len(prepared_plans)}",
+                )
     else:
         with ThreadPoolExecutor(
             max_workers=workers,
             thread_name_prefix="watermark-output",
         ) as executor:
-            results = list(executor.map(process_one, prepared_plans))
+            results = []
+            for start in range(0, len(prepared_plans), workers):
+                if task_control:
+                    task_control.checkpoint()
+                batch = prepared_plans[start : start + workers]
+                results.extend(executor.map(process_one, batch))
+                if task_control:
+                    task_control.report_range(
+                        2,
+                        100,
+                        len(results),
+                        len(prepared_plans),
+                        f"正在处理照片 {len(results)}/{len(prepared_plans)}",
+                    )
     errors = [result for result in results if result]
     succeeded = len(results) - len(errors)
     return succeeded, errors

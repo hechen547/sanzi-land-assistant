@@ -317,6 +317,41 @@ QPlainTextEdit#dropZone {
     color: #617186;
 }
 
+QTextBrowser#guideBrowser {
+    background: white;
+    border: 1px solid #d8e0e9;
+    border-radius: 10px;
+    padding: 14px 20px;
+    selection-background-color: #2a78e7;
+}
+
+QListWidget#guideNavigation {
+    background: white;
+    border: 1px solid #d8e0e9;
+    border-radius: 10px;
+    padding: 10px 8px;
+    outline: none;
+}
+
+QListWidget#guideNavigation::item {
+    min-height: 42px;
+    padding-left: 13px;
+    margin: 3px 0;
+    border-radius: 7px;
+    color: #536377;
+}
+
+QListWidget#guideNavigation::item:selected {
+    background: #e8f1ff;
+    color: #1769e0;
+    font-weight: 700;
+    border-left: 3px solid #2478ed;
+}
+
+QListWidget#guideNavigation::item:hover:!selected {
+    background: #f5f8fc;
+}
+
 QFrame#actionBar {
     background: white;
     border: 1px solid #d8e0e9;
@@ -472,4 +507,10 @@ QProgressBar#taskProgressBar {
     min-height: 9px;
     max-height: 9px;
     margin-top: 7px;
+}
+
+QLabel#progressPercent {
+    color: #1769e0;
+    font-size: 12px;
+    font-weight: 700;
 }

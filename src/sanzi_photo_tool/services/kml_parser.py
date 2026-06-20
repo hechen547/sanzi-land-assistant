@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from shapely import make_valid
 from shapely.geometry import MultiPolygon, Polygon
+from shapely.ops import unary_union
 
 
 @dataclass(slots=True)
@@ -28,14 +30,11 @@ def read_land_kml_files(kml_paths: list[str]) -> list[ParsedLand]:
             polygons = _parse_placemark_polygons(placemark)
             if not polygons:
                 continue
-            geometry: Polygon | MultiPolygon
-            geometry = polygons[0] if len(polygons) == 1 else MultiPolygon(polygons)
-            if not geometry.is_valid:
-                geometry = geometry.buffer(0)
-            polygon_parts = _extract_polygon_parts(geometry)
-            if not polygon_parts:
+            geometry = repair_polygonal_geometry(
+                polygons[0] if len(polygons) == 1 else MultiPolygon(polygons)
+            )
+            if geometry is None:
                 continue
-            geometry = polygon_parts[0] if len(polygon_parts) == 1 else MultiPolygon(polygon_parts)
             name = _child_text(placemark, "name").strip()
             extended = _read_extended_data(placemark)
             landcode = _find_landcode(extended)
@@ -66,10 +65,9 @@ def _parse_placemark_polygons(placemark: ET.Element) -> list[Polygon]:
             for inner_node in _find_all(polygon_node, "innerBoundaryIs")
             if len(coordinates := _read_boundary(inner_node)) >= 3
         ]
-        polygon = Polygon(outer, holes)
-        if not polygon.is_valid:
-            polygon = polygon.buffer(0)
-        polygons.extend(_extract_polygon_parts(polygon))
+        repaired = repair_polygonal_geometry(Polygon(outer, holes))
+        if repaired is not None:
+            polygons.extend(_extract_polygon_parts(repaired))
     return polygons
 
 
@@ -125,6 +123,39 @@ def _extract_polygon_parts(geometry: object) -> list[Polygon]:
     return [part for geom in geoms for part in _extract_polygon_parts(geom)]
 
 
+def repair_polygonal_geometry(
+    geometry: object,
+) -> Polygon | MultiPolygon | None:
+    """修复图斑并只保留有效面，兼容自交面和 GeometryCollection。"""
+    if geometry is None or getattr(geometry, "is_empty", True):
+        return None
+    fixed = geometry
+    if not getattr(fixed, "is_valid", False):
+        try:
+            fixed = make_valid(fixed)
+        except Exception:
+            fixed = fixed.buffer(0)
+    parts = _extract_polygon_parts(fixed)
+    if not parts:
+        return None
+    merged = unary_union(parts)
+    if not merged.is_valid:
+        try:
+            merged = make_valid(merged)
+        except Exception:
+            merged = merged.buffer(0)
+    final_parts = [
+        part
+        for part in _extract_polygon_parts(merged)
+        if not part.is_empty and part.area > 0
+    ]
+    if not final_parts:
+        return None
+    result: Polygon | MultiPolygon
+    result = final_parts[0] if len(final_parts) == 1 else MultiPolygon(final_parts)
+    return result if result.is_valid else None
+
+
 def _find_all(node: ET.Element, local_name: str) -> list[ET.Element]:
     return [child for child in node.iter() if _local_name(child.tag) == local_name]
 
@@ -140,4 +171,3 @@ def _child_text(node: ET.Element, local_name: str) -> str:
 
 def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
-

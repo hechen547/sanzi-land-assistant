@@ -1,6 +1,9 @@
 from pathlib import Path
 
 from sanzi_photo_tool.services.kml_parser import read_land_kml_files
+from shapely.geometry import Polygon
+
+from sanzi_photo_tool.services.kml_parser import repair_polygonal_geometry
 
 
 def test_read_simple_kml(tmp_path: Path) -> None:
@@ -28,3 +31,11 @@ def test_read_simple_kml(tmp_path: Path) -> None:
     assert lands[0].landcode == "DK001"
     assert lands[0].geometry.is_valid
 
+
+def test_repair_self_intersecting_polygon_keeps_polygon_parts() -> None:
+    bow_tie = Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)])
+    repaired = repair_polygonal_geometry(bow_tie)
+    assert repaired is not None
+    assert repaired.is_valid
+    assert repaired.geom_type in {"Polygon", "MultiPolygon"}
+    assert repaired.area > 0

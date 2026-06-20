@@ -6,8 +6,8 @@ from pathlib import Path
 
 
 APP_NAME = "三资辅助软件"
-APP_VERSION = "1.0"
-APP_VERSION_FULL = "1.0.0"
+APP_VERSION = "1.2"
+APP_VERSION_FULL = "1.2.0"
 
 
 def is_compiled() -> bool:

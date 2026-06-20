@@ -21,7 +21,7 @@ class OrganizeSummary:
     matched: int = 0
     unmatched: int = 0
     succeeded: int = 0
+    supplemented: int = 0
     failed: int = 0
     empty_lands: int = 0
     results: list[FileOperationResult] = field(default_factory=list)
-
